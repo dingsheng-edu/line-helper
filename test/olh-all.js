@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.8', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.9', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1361,7 +1361,14 @@
     P + ' label.lg-c{display:block;cursor:pointer}' +
     P + ' .lg-mode{display:block;padding:8px 10px;border:2px solid #e0e0e0;border-radius:8px;margin-bottom:6px;cursor:pointer}' +
     P + ' .lg-mode.on{border-color:' + MAIN + ';background:#f3e5f5}' +
-    P + ' .lg-prog{margin-top:6px;color:' + MAIN + ';font-weight:bold}';
+    P + ' .lg-prog{margin-top:6px;color:' + MAIN + ';font-weight:bold}' +
+    P + ' .lg-sendbox{border:2px solid #90caf9;background:#e3f2fd;border-radius:8px;padding:8px 10px;margin:6px 0}' +
+    P + ' .lg-bar{position:relative;height:20px;background:#fff;border:1px solid #bbdefb;border-radius:10px;overflow:hidden;margin:6px 0}' +
+    P + ' .lg-bar i{display:block;height:100%;width:0;background:' + MAIN + ';transition:width .25s}' +
+    P + ' .lg-bar span{position:absolute;left:0;right:0;top:0;text-align:center;font-size:12px;line-height:20px;font-weight:bold;color:#222}' +
+    P + ' .lg-done{border-radius:8px;padding:10px 12px;margin:6px 0;font-size:16px;font-weight:bold}' +
+    P + ' .lg-done-ok{background:#e8f5e9;color:#1b5e20;border:2px solid #66bb6a}' +
+    P + ' .lg-done-bad{background:#ffebee;color:#b71c1c;border:2px solid #ef5350}';
 
   var panel = document.createElement('div');
   panel.id = PANEL_ID;
@@ -1624,12 +1631,31 @@
     panel.querySelectorAll('.lg-out input[type=checkbox]').forEach(function (b) { b.disabled = true; });
     var stopBtn = $('.lg-stop'); stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.textContent = '停止發送';
 
+    /* 進度框：放在結果區最上面（按下面的「重發」時也看得到），有自己的停止按鈕 */
+    var out = $('.lg-out'), sb = document.createElement('div');
+    sb.className = 'lg-sendbox';
+    sb.innerHTML = '<b class="lg-sb-t"></b><div class="lg-bar"><i></i><span></span></div><div class="lg-sb-s lg-muted"></div>' +
+      '<button class="lg-btn lg-sec lg-sb-stop" style="color:#c62828;border-color:#c62828">停止發送</button>';
+    out.insertBefore(sb, out.firstChild);
+    sb.scrollIntoView({ block: 'nearest' });
+    sb.querySelector('.lg-sb-stop').onclick = function () { stopBtn.onclick.call(stopBtn); this.disabled = true; this.textContent = '停止中…（這一則發完就停）'; };
+    state.sbar = function (title, i, n, sub) {
+      var p = n ? Math.round(i / n * 100) : 0;
+      sb.querySelector('.lg-sb-t').textContent = title;
+      sb.querySelector('.lg-bar i').style.width = p + '%';
+      sb.querySelector('.lg-bar span').textContent = p + '%（' + i + ' / ' + n + '）';
+      sb.querySelector('.lg-sb-s').textContent = sub || '';
+      $('.lg-prog').textContent = title + ' ' + i + ' / ' + n + (sub ? '：' + sub : '');
+    };
+    var label = resendJobs ? '重發中' : '發送中';
+    state.sbar(label, 0, jobs.length, '準備中…');
+
     var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i], it = job.it, c = job.c;
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
-      $('.lg-prog').textContent = '發送中 ' + (i + 1) + ' / ' + jobs.length + '：' + it.student + ' → ' + c.nick;
+      state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
         if (!byStudent[it.student]) {
           byStudent[it.student] = {};
@@ -1643,7 +1669,7 @@
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
-          $('.lg-prog').textContent = '發送中 ' + (i + 1) + ' / ' + jobs.length + '：LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…';
+          state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…');
           await sleep(WAITS[tries]); tries++;
           c.sendId = newSendId(); c.sentAt = Date.now();
           st = await sendText(c.contactId, it.text, c.sendId);
@@ -1656,6 +1682,8 @@
       }
       await sleep(gap);
     }
+    state.sbar(label, jobs.length, jobs.length, state.stop ? '已停止' : '發送完畢，接著到聊天室確認送達…');
+    sb.querySelector('.lg-sb-stop').style.display = 'none';
     stopBtn.style.display = 'none';
     await verifySent(jobs);
     $('.lg-preview').disabled = false;
@@ -1673,12 +1701,12 @@
     var todo = jobs.filter(function (j) { return j.c.sendId && (j.c.result === '成功' || j.c.resend === 'unsure'); });
     var waits = [2000, 5000, 15000];
     for (var round = 0; round < waits.length && todo.length; round++) {
-      $('.lg-prog').textContent = '送達確認：' + (waits[round] / 1000) + ' 秒後到聊天室檢查' + (round ? '（第 ' + (round + 1) + ' 次，還有 ' + todo.length + ' 則沒找到）' : '') + '…';
+      state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), 0, todo.length, '等 ' + (waits[round] / 1000) + ' 秒後到聊天室檢查…');
       await sleep(waits[round]);
       var left = [];
       for (var i = 0; i < todo.length; i++) {
         var j = todo[i], c = j.c;
-        $('.lg-prog').textContent = '送達確認中 ' + (i + 1) + ' / ' + todo.length + '：' + j.it.student + ' → ' + c.nick;
+        state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), i + 1, todo.length, j.it.student + ' → ' + c.nick);
         var found = await inChat(c.contactId, c.sendId, j.it.text, c.sentAt);
         if (found === null) c.verify = 'error';
         else if (found) {
@@ -1737,8 +1765,17 @@
     if (unsureJobs.length) rs += '<div class="lg-box" style="margin-top:8px"><span class="lg-warn">有 ' + unsureJobs.length + ' 則不確定有沒有送出</span>：請先到聊天室看家長有沒有收到。確認<b>沒收到</b>再按：<br>' +
       '<button class="lg-btn lg-sec lg-resend-unsure" style="color:#c62828;border-color:#c62828">我確認過沒收到，重發這 ' + unsureJobs.length + ' 則</button></div>';
     lines.push('', '沒發到（找不到 LINE）：' + (notFound.join('、') || '無'), '沒發到（沒勾選）：' + (unchecked.join('、') || '無'), '發送失敗：' + (fail.join('；') || '無'));
-    $('.lg-out').innerHTML = box + h + miss + (rs ? '<div style="margin:8px 0">' + rs + '</div>' : '') + '<button class="lg-btn lg-sec lg-copy">複製結果（可貼到 Excel）</button>';
-    if (safeJobs.length) $('.lg-resend-safe').onclick = function () { doSend(safeJobs); };
+    /* 最上面的大橫幅：全部完成（綠）或還沒完成（紅，附重發按鈕） */
+    var need = fail.length + stopped, notSent = notFound.length + unchecked.length;
+    var banner = need
+      ? '<div class="lg-done lg-done-bad">⚠ 還沒全部完成：有 ' + need + ' 則沒有確定送出' +
+        (safeJobs.length ? '<br><button class="lg-btn lg-resend-safe2" style="background:#c62828;border-color:#c62828">重發沒送出的 ' + safeJobs.length + ' 則</button>' : '') +
+        (unsureJobs.length ? '<div style="font-size:13px;font-weight:normal">另有 ' + unsureJobs.length + ' 則不確定，請看最下面。</div>' : '') + '</div>'
+      : '<div class="lg-done lg-done-ok">✔ 全部完成：' + ok + ' 則都已送出' + (ok && verified === ok ? '，也都在聊天室確認了' : '（其中 ' + verified + ' 則已在聊天室確認）') + '</div>';
+    if (notSent) banner += '<div class="lg-box lg-warn">另有 ' + notSent + ' 位學生沒有發（找不到 LINE 或沒勾選），請看下面「漏發檢查」。</div>';
+    $('.lg-out').innerHTML = banner + box + h + miss + (rs ? '<div style="margin:8px 0">' + rs + '</div>' : '') + '<button class="lg-btn lg-sec lg-copy">複製結果（可貼到 Excel）</button>';
+    if (safeJobs.length) $('.lg-resend-safe').onclick = $('.lg-resend-safe2').onclick = function () { doSend(safeJobs); };
+    $('.lg-out').firstChild.scrollIntoView({ block: 'nearest' });
     if (unsureJobs.length) $('.lg-resend-unsure').onclick = function () { doSend(unsureJobs); };
     $('.lg-copy').onclick = function () {
       var text = '帳號：' + $('.lg-bot').textContent + '\n' + lines.join('\n');
@@ -2053,7 +2090,14 @@
     P + ' .lg-msg{white-space:pre-wrap;background:#e8f5e9;border-radius:8px;padding:6px 8px;margin-top:4px}' +
     P + ' .lg-banner{background:#fff3e0;color:#e65100;border-radius:6px;padding:6px 10px;margin-bottom:10px;font-weight:bold}' +
     P + ' label.lg-c{display:block;cursor:pointer}' +
-    P + ' .lg-prog{margin-top:6px;color:#1565c0;font-weight:bold}';
+    P + ' .lg-prog{margin-top:6px;color:#1565c0;font-weight:bold}' +
+    P + ' .lg-sendbox{border:2px solid #90caf9;background:#e3f2fd;border-radius:8px;padding:8px 10px;margin:6px 0}' +
+    P + ' .lg-bar{position:relative;height:20px;background:#fff;border:1px solid #bbdefb;border-radius:10px;overflow:hidden;margin:6px 0}' +
+    P + ' .lg-bar i{display:block;height:100%;width:0;background:' + '#1565c0' + ';transition:width .25s}' +
+    P + ' .lg-bar span{position:absolute;left:0;right:0;top:0;text-align:center;font-size:12px;line-height:20px;font-weight:bold;color:#222}' +
+    P + ' .lg-done{border-radius:8px;padding:10px 12px;margin:6px 0;font-size:16px;font-weight:bold}' +
+    P + ' .lg-done-ok{background:#e8f5e9;color:#1b5e20;border:2px solid #66bb6a}' +
+    P + ' .lg-done-bad{background:#ffebee;color:#b71c1c;border:2px solid #ef5350}';
 
   /* 班別下拉選單（依年級分組）。來源：班別清單_LINE與共用資料夾.xlsx 的「建議下拉選單」，2026/10/18 整理。
      要增減班別就改這裡；選單最下面一定有「其他（自己輸入）」。 */
@@ -2354,12 +2398,31 @@
     panel.querySelectorAll('.lg-out input[type=checkbox]').forEach(function (b) { b.disabled = true; });
     var stopBtn = $('.lg-stop'); stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.textContent = '停止發送';
 
+    /* 進度框：放在結果區最上面（按下面的「重發」時也看得到），有自己的停止按鈕 */
+    var out = $('.lg-out'), sb = document.createElement('div');
+    sb.className = 'lg-sendbox';
+    sb.innerHTML = '<b class="lg-sb-t"></b><div class="lg-bar"><i></i><span></span></div><div class="lg-sb-s lg-muted"></div>' +
+      '<button class="lg-btn lg-sec lg-sb-stop" style="color:#c62828;border-color:#c62828">停止發送</button>';
+    out.insertBefore(sb, out.firstChild);
+    sb.scrollIntoView({ block: 'nearest' });
+    sb.querySelector('.lg-sb-stop').onclick = function () { stopBtn.onclick.call(stopBtn); this.disabled = true; this.textContent = '停止中…（這一則發完就停）'; };
+    state.sbar = function (title, i, n, sub) {
+      var p = n ? Math.round(i / n * 100) : 0;
+      sb.querySelector('.lg-sb-t').textContent = title;
+      sb.querySelector('.lg-bar i').style.width = p + '%';
+      sb.querySelector('.lg-bar span').textContent = p + '%（' + i + ' / ' + n + '）';
+      sb.querySelector('.lg-sb-s').textContent = sub || '';
+      $('.lg-prog').textContent = title + ' ' + i + ' / ' + n + (sub ? '：' + sub : '');
+    };
+    var label = resendJobs ? '重發中' : '發送中';
+    state.sbar(label, 0, jobs.length, '準備中…');
+
     var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i], it = job.it, c = job.c;
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
-      $('.lg-prog').textContent = '發送中 ' + (i + 1) + ' / ' + jobs.length + '：' + it.student + ' → ' + c.nick;
+      state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
         if (!byStudent[it.student]) {
           byStudent[it.student] = {};
@@ -2373,7 +2436,7 @@
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
-          $('.lg-prog').textContent = '發送中 ' + (i + 1) + ' / ' + jobs.length + '：LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…';
+          state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…');
           await sleep(WAITS[tries]); tries++;
           c.sendId = newSendId(); c.sentAt = Date.now();
           st = await sendText(c.contactId, it.text, c.sendId);
@@ -2386,6 +2449,8 @@
       }
       await sleep(gap);
     }
+    state.sbar(label, jobs.length, jobs.length, state.stop ? '已停止' : '發送完畢，接著到聊天室確認送達…');
+    sb.querySelector('.lg-sb-stop').style.display = 'none';
     stopBtn.style.display = 'none';
     await verifySent(jobs);
     $('.lg-preview').disabled = false;
@@ -2403,12 +2468,12 @@
     var todo = jobs.filter(function (j) { return j.c.sendId && (j.c.result === '成功' || j.c.resend === 'unsure'); });
     var waits = [2000, 5000, 15000];
     for (var round = 0; round < waits.length && todo.length; round++) {
-      $('.lg-prog').textContent = '送達確認：' + (waits[round] / 1000) + ' 秒後到聊天室檢查' + (round ? '（第 ' + (round + 1) + ' 次，還有 ' + todo.length + ' 則沒找到）' : '') + '…';
+      state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), 0, todo.length, '等 ' + (waits[round] / 1000) + ' 秒後到聊天室檢查…');
       await sleep(waits[round]);
       var left = [];
       for (var i = 0; i < todo.length; i++) {
         var j = todo[i], c = j.c;
-        $('.lg-prog').textContent = '送達確認中 ' + (i + 1) + ' / ' + todo.length + '：' + j.it.student + ' → ' + c.nick;
+        state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), i + 1, todo.length, j.it.student + ' → ' + c.nick);
         var found = await inChat(c.contactId, c.sendId, j.it.text, c.sentAt);
         if (found === null) c.verify = 'error';
         else if (found) {
@@ -2467,8 +2532,17 @@
     if (unsureJobs.length) rs += '<div class="lg-box" style="margin-top:8px"><span class="lg-warn">有 ' + unsureJobs.length + ' 則不確定有沒有送出</span>：請先到聊天室看家長有沒有收到。確認<b>沒收到</b>再按：<br>' +
       '<button class="lg-btn lg-sec lg-resend-unsure" style="color:#c62828;border-color:#c62828">我確認過沒收到，重發這 ' + unsureJobs.length + ' 則</button></div>';
     lines.push('', '沒發到（找不到 LINE）：' + (notFound.join('、') || '無'), '沒發到（沒勾選）：' + (unchecked.join('、') || '無'), '發送失敗：' + (fail.join('；') || '無'));
-    $('.lg-out').innerHTML = box + h + miss + (rs ? '<div style="margin:8px 0">' + rs + '</div>' : '') + '<button class="lg-btn lg-sec lg-copy">複製結果（可貼到 Excel）</button>';
-    if (safeJobs.length) $('.lg-resend-safe').onclick = function () { doSend(safeJobs); };
+    /* 最上面的大橫幅：全部完成（綠）或還沒完成（紅，附重發按鈕） */
+    var need = fail.length + stopped, notSent = notFound.length + unchecked.length;
+    var banner = need
+      ? '<div class="lg-done lg-done-bad">⚠ 還沒全部完成：有 ' + need + ' 則沒有確定送出' +
+        (safeJobs.length ? '<br><button class="lg-btn lg-resend-safe2" style="background:#c62828;border-color:#c62828">重發沒送出的 ' + safeJobs.length + ' 則</button>' : '') +
+        (unsureJobs.length ? '<div style="font-size:13px;font-weight:normal">另有 ' + unsureJobs.length + ' 則不確定，請看最下面。</div>' : '') + '</div>'
+      : '<div class="lg-done lg-done-ok">✔ 全部完成：' + ok + ' 則都已送出' + (ok && verified === ok ? '，也都在聊天室確認了' : '（其中 ' + verified + ' 則已在聊天室確認）') + '</div>';
+    if (notSent) banner += '<div class="lg-box lg-warn">另有 ' + notSent + ' 位學生沒有發（找不到 LINE 或沒勾選），請看下面「漏發檢查」。</div>';
+    $('.lg-out').innerHTML = banner + box + h + miss + (rs ? '<div style="margin:8px 0">' + rs + '</div>' : '') + '<button class="lg-btn lg-sec lg-copy">複製結果（可貼到 Excel）</button>';
+    if (safeJobs.length) $('.lg-resend-safe').onclick = $('.lg-resend-safe2').onclick = function () { doSend(safeJobs); };
+    $('.lg-out').firstChild.scrollIntoView({ block: 'nearest' });
     if (unsureJobs.length) $('.lg-resend-unsure').onclick = function () { doSend(unsureJobs); };
     $('.lg-copy').onclick = function () {
       var text = '帳號：' + $('.lg-bot').textContent + '\n' + lines.join('\n');
