@@ -9,8 +9,9 @@
   'use strict';
 
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
-     再執行 build_install_page.py 和 publish.py，並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.3', VERSION_DATE = '2026/10/18';
+     再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
+     並在「更新紀錄.txt」寫一行改了什麼。 */
+  var VERSION = '1.5', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -79,7 +80,8 @@
   shell.setAttribute('data-ver', VERSION);
   shell.innerHTML = '<style>' + css + '</style>' +
     '<div class="olh-head" title="按住這裡可以拖動視窗">' +
-    '<div class="olh-title"><b>官方LINE小幫手 <small class="olh-ver" title="版本日期 ' + VERSION_DATE + '">v' + VERSION + '</small></b><span>鼎盛文教事業（高群、金頭腦資優、空中美語）</span></div>' +
+    '<div class="olh-title"><b>官方LINE小幫手 <small class="olh-ver" title="版本日期 ' + VERSION_DATE + '">v' + VERSION + '</small>' +
+    (window.__olhTest ? ' <small class="olh-ver" style="background:#d32f2f">測試版</small>' : '') + '</b><span>鼎盛文教事業（高群、金頭腦資優、空中美語）</span></div>' +
     '<button class="olh-hbtn olh-min-btn" title="縮小／放大">－</button>' +
     '<button class="olh-hbtn olh-close" title="關閉">×</button></div>' +
     '<div class="olh-acct"><span class="olh-acct-l">目前帳號</span><span class="olh-acct-n">讀取中…</span>' +
@@ -431,7 +433,7 @@
 
   /* 漏上檢查：名單上每位學生是否都有上到；標籤裡有沒有不在名單上的人 */
   async function check(names, tagId, onProgress) {
-    var res = { ok: [], missing: [], notFound: [], extra: [], tagCount: null };
+    var res = { ok: [], missing: [], notFound: [], extra: [], extraItems: [], tagCount: null };
     var taggedIds = {};
     for (var i = 0; i < names.length; i++) {
       var n = names[i];
@@ -451,7 +453,7 @@
     members.forEach(function (m) {
       var nick = displayName(m);
       var inList = names.some(function (n) { return nick.indexOf(n) >= 0; });
-      if (!inList) res.extra.push(nick);
+      if (!inList) { res.extra.push(nick); res.extraItems.push({ id: m.chatId, nick: nick }); }
     });
     var tags = await getTags();
     var t = tags.filter(function (x) { return x.tagId === tagId; })[0];
@@ -594,7 +596,10 @@
   function prog(i, n, name) { $('.lt-prog').textContent = '處理中 ' + i + ' / ' + n + '：' + name; setBar($('.lt-bar1'), i, n); }
   function busy(b) {
     state.busy = b; panel.querySelectorAll('button.lt-btn').forEach(function (x) { x.disabled = b; });
-    if (!b) { $('.lt-apply').disabled = !state.rows; hideBar($('.lt-bar1')); }
+    if (!b) {
+      $('.lt-apply').disabled = !state.rows; hideBar($('.lt-bar1'));
+      var ex = $('.lt-ex-remove'); if (ex && ex.recount) ex.recount();
+    }
   }
 
   /* 搜尋預覽 */
@@ -603,13 +608,26 @@
     var tagId = $('.lt-tag').value;
     busy(true); $('.lt-out').innerHTML = '';
     try {
-      state.rows = await preview(state.names, tagId, prog);
+      state.rows = sortRows(await preview(state.names, tagId, prog));
       state.tagId = tagId;
       renderPreview();
       $('.lt-prog').textContent = '預覽完成。請確認勾選，再按「開始上標籤」。';
     } catch (e) { alert('搜尋失敗：' + e.message); }
     busy(false);
   };
+
+  /* 預覽排序：還沒上標籤的排最前面（方便勾選），找不到的其次，全部都已經有標籤的放最後；
+     同一位學生裡，還沒上的 LINE 也排前面。同一組裡維持名單原本的順序。 */
+  function rowRank(r) {
+    if (r.contacts.some(function (c) { return !c.hasTag; })) return 0;
+    return r.contacts.length ? 2 : 1;
+  }
+  function sortRows(rows) {
+    rows.forEach(function (r) { r.contacts.sort(function (a, b) { return (a.hasTag ? 1 : 0) - (b.hasTag ? 1 : 0); }); });
+    return rows.map(function (r, i) { return { r: r, i: i }; })
+      .sort(function (a, b) { return rowRank(a.r) - rowRank(b.r) || a.i - b.i; })
+      .map(function (x) { return x.r; });
+  }
 
   function renderPreview() {
     var rows = state.rows, nf = rows.filter(function (r) { return !r.contacts.length; }).length;
@@ -619,7 +637,15 @@
       (nf ? '　<span class="lt-red">找不到 ' + nf + ' 位</span>' : '') +
       '<div class="lt-muted">有勾的才會上。灰色說明代表要你確認（例如名稱裡沒有學生姓名）。</div></div>' +
       '<table><tr><th style="width:80px">學生</th><th>找到的家長 LINE（勾選＝要上）</th></tr>';
+    var lastRank = 0;
     rows.forEach(function (r, ri) {
+      var rk = rowRank(r);
+      if (rk !== lastRank) {
+        var cnt = rows.filter(function (x) { return rowRank(x) === rk; }).length;
+        h += '<tr><td colspan="2" style="background:#fff3e0;font-weight:bold;color:#555">' +
+          (rk === 1 ? '以下 ' + cnt + ' 位找不到 LINE' : '以下 ' + cnt + ' 位已經有這個標籤，不用再勾') + '</td></tr>';
+        lastRank = rk;
+      }
       h += '<tr><td>' + esc(r.student) + '</td><td>';
       if (r.error) h += '<span class="lt-red">搜尋失敗：' + esc(r.error) + '</span>';
       else if (!r.contacts.length) h += '<span class="lt-red">找不到</span>';
@@ -700,9 +726,13 @@
       h += '</table><div class="lt-muted">這些家長 LINE 名稱裡有學生姓名，但沒有這個標籤。如果是同名的別人，可以不用管。</div></div>';
     }
     if (failed.length) h += '<div class="lt-box"><span class="lt-red">上標籤失敗</span>：<br>' + failed.map(esc).join('<br>') + '</div>';
-    if (chk.extra.length) h += '<div class="lt-box"><span class="lt-warn">多出來的（' + chk.extra.length + ' 個）</span>：標籤裡有，但不是名單上的學生：' +
-      '<div style="max-height:160px;overflow:auto;margin-top:4px">' + chk.extra.map(esc).join('<br>') + '</div>' +
-      '<div class="lt-muted">可能是以前就上過、兄弟姊妹共用的 LINE，或上錯人，請確認。</div></div>';
+    if (chk.extraItems.length) h += '<div class="lt-box lt-extra"><span class="lt-warn">多出來的（' + chk.extraItems.length + ' 個）</span>：標籤裡有，但不是名單上的學生。' +
+      '<div class="lt-muted">可能是以前就上過、兄弟姊妹共用的 LINE，或上錯人。<b>有勾＝保留標籤；取消勾選＝要拿掉這個標籤</b>（其他標籤不會動）。</div>' +
+      '<div style="margin-top:4px"><button class="lt-small lt-ex-all">全部勾選</button><button class="lt-small lt-ex-none">全部取消</button></div>' +
+      '<div class="lt-scroll" style="max-height:220px">' + chk.extraItems.map(function (x, i) {
+        return '<label class="lt-c"><input type="checkbox" class="lt-keep" data-i="' + i + '" checked> ' + esc(x.nick) + ' <span class="lt-ex-res"></span></label>';
+      }).join('') + '</div>' +
+      '<button class="lt-btn lt-ex-remove" style="background:#c62828;border-color:#c62828" disabled>拿掉沒勾的標籤（<span class="lt-ex-n">0</span> 個）</button></div>';
 
     lines.push('', '漏上檢查');
     lines.push('找不到 LINE：' + (chk.notFound.join('、') || '無'));
@@ -712,10 +742,48 @@
 
     h += '<button class="lt-btn lt-sec lt-copy">複製結果（可貼到 Excel / LINE）</button>';
     $('.lt-out').innerHTML = h;
+    if (chk.extraItems.length) wireExtra(chk.extraItems, state.tagId, name);
     $('.lt-copy').onclick = function () {
       var text = '帳號：' + (state.botName || '') + '\n標籤：' + name + '\n' + lines.join('\n');
       navigator.clipboard.writeText(text).then(function () { alert('已複製！'); }, function () { prompt('請手動複製：', text); });
     };
+  }
+
+  /* 多出來的人：取消勾選的，按按鈕把這個標籤拿掉（重新讀最新標籤，只拿掉這一個，其他保留） */
+  function wireExtra(items, tagId, name) {
+    var box = $('.lt-extra');
+    var boxes = function () { return box.querySelectorAll('input.lt-keep'); };
+    function todo() { return Array.prototype.filter.call(boxes(), function (cb) { return !cb.checked && !cb.disabled; }); }
+    function count() { var n = todo().length; box.querySelector('.lt-ex-n').textContent = n; box.querySelector('.lt-ex-remove').disabled = !n || state.busy; }
+    box.querySelector('.lt-ex-remove').recount = count;
+    boxes().forEach(function (cb) { cb.onchange = count; });
+    box.querySelector('.lt-ex-all').onclick = function () { boxes().forEach(function (cb) { if (!cb.disabled) cb.checked = true; }); count(); };
+    box.querySelector('.lt-ex-none').onclick = function () { boxes().forEach(function (cb) { if (!cb.disabled) cb.checked = false; }); count(); };
+    box.querySelector('.lt-ex-remove').onclick = async function () {
+      var list = todo();
+      if (!list.length || state.busy) return;
+      if (!confirm('帳號：' + (state.botName || '') + '\n要把 ' + list.length + ' 個 LINE 的「' + name + '」標籤拿掉嗎？\n（只拿掉這一個標籤，其他標籤會保留）')) return;
+      busy(true); box.querySelector('.lt-ex-remove').disabled = true;
+      var ok = 0;
+      for (var i = 0; i < list.length; i++) {
+        var cb = list[i], it = items[cb.dataset.i], res = cb.parentNode.querySelector('.lt-ex-res');
+        prog(i + 1, list.length, '拿掉標籤：' + it.nick);
+        try {
+          var found = (await searchContacts(it.nick)).filter(function (c) { return c.contactId === it.id; })[0];
+          if (!found) { res.innerHTML = '<span class="lt-red">失敗：找不到這個 LINE</span>'; continue; }
+          var cur = found.tagIds || [];
+          if (cur.indexOf(tagId) < 0) { res.innerHTML = '<span class="lt-muted">（原本就沒有）</span>'; cb.disabled = true; continue; }
+          await setContactTags(it.id, cur.filter(function (t) { return t !== tagId; }));
+          res.innerHTML = '<span class="lt-green">✔ 已拿掉</span>'; cb.disabled = true; ok++;
+        } catch (e) { res.innerHTML = '<span class="lt-red">失敗：' + esc(e.message) + '</span>'; }
+        await sleep(250);
+      }
+      busy(false);
+      getTags().then(function (t) { state.tags = t; fillTags(); });
+      $('.lt-prog').textContent = '拿掉標籤完成：成功 ' + ok + ' / ' + list.length + ' 個。';
+      count();
+    };
+    count();
   }
 
   /* ========== 分頁切換 ========== */
@@ -1812,7 +1880,7 @@
       var msg = render(template, rec, table.headers);
       if (rec.__retest) msg.text += '\n' + rec.__retest;
       msg.text = msg.text.replace(/!/g, '！');   /* 驚嘆號一律全形 */
-      var item = { student: n, row: rec.__row, text: msg.text, missing: msg.missing, unknown: msg.unknown, contacts: [], warn: [], block: '', retest: !!rec.__retest };
+      var item = { student: n, row: rec.__row, score: table.scoreKey ? (rec[table.scoreKey] || '') : null, text: msg.text, missing: msg.missing, unknown: msg.unknown, contacts: [], warn: [], block: '', retest: !!rec.__retest };
       var list;
       try { list = await searchContacts(n); } catch (e) { item.block = '搜尋失敗：' + e.message; out.push(item); continue; }
       var mine = list.filter(function (c) { return displayName(c).indexOf(n) >= 0 && !c.spam; });
@@ -2068,12 +2136,24 @@
     });
     state.busy = true; this.disabled = true; $('.lg-send').disabled = true; $('.lg-out').innerHTML = '';
     try {
-      state.items = await preview(state.table, tpl, prog); renderPreview();
+      /* 預覽和發送結果都依分數由高到低排；沒有分數（缺考）的排最後 */
+      var sorted = t.records.slice();
+      if (sk) {
+        var sc = function (r) { var v = parseFloat(r[sk]); return isNaN(v) ? -Infinity : v; };
+        sorted.sort(function (a, b) { return sc(b) - sc(a); });
+      }
+      state.items = await preview({ headers: t.headers, nameHeader: t.nameHeader, records: sorted, scoreKey: sk }, tpl, prog); renderPreview();
       $('.lg-prog').textContent = SEND_ENABLED ? '預覽完成。請逐一確認內容與勾選，沒問題再按「開始發送」。' : '預覽完成。';
       if (SEND_ENABLED) $('.lg-send').disabled = false;
     } catch (e) { alert('預覽失敗：' + e.message); }
     state.busy = false; this.disabled = false;
   };
+
+  /* 學生姓名下面顯示分數（空白＝缺考） */
+  function scoreTag(it) {
+    if (it.score == null) return '';
+    return '<div style="font-weight:bold;color:#1565c0">' + (it.score === '' ? '<span class="lg-muted">缺考</span>' : esc(it.score) + ' 分') + '</div>';
+  }
 
   function renderPreview() {
     var items = state.items, send = 0, students = 0, blocked = [], unread = [];
@@ -2092,7 +2172,7 @@
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
       '</div><table><tr><th style="width:84px">學生</th><th>發給 ／ 訊息內容</th></tr>';
     items.forEach(function (it, ii) {
-      h += '<tr><td>' + esc(it.student) + '<div class="lg-muted">Excel 第 ' + it.row + ' 列</div></td><td>';
+      h += '<tr><td>' + esc(it.student) + scoreTag(it) + '<div class="lg-muted">Excel 第 ' + it.row + ' 列</div></td><td>';
       if (it.block) h += '<span class="lg-red">' + esc(it.block) + '，不會發</span>';
       if (it.retest) h += '<div><span style="background:#fde7e9;color:#c62828;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需補考</span></div>';
       it.warn.forEach(function (w) { h += '<div class="lg-warn">⚠ ' + esc(w) + '</div>'; });
@@ -2211,7 +2291,7 @@
         else if (c.result.indexOf('已停止') === 0) stopped++;
         else if (c.result.indexOf('略過') === 0) skipped.push(it.student + '：' + c.nick);
         else fail.push(it.student + '：' + c.nick + '（' + c.result + '）');
-        h += '<tr><td>' + (k ? '' : esc(it.student)) + '</td><td>' + esc(c.nick) + '</td><td style="' + cls + '">' + esc(c.result) + '</td></tr>';
+        h += '<tr><td>' + (k ? '' : esc(it.student) + scoreTag(it)) + '</td><td>' + esc(c.nick) + '</td><td style="' + cls + '">' + esc(c.result) + '</td></tr>';
         lines.push(it.student + '\t' + c.nick + '\t' + c.result);
       });
     });
