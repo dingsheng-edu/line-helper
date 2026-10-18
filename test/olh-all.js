@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.11', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.12', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -2092,6 +2092,7 @@
     P + ' .lg-banner{background:#fff3e0;color:#e65100;border-radius:6px;padding:6px 10px;margin-bottom:10px;font-weight:bold}' +
     P + ' label.lg-c{display:block;cursor:pointer}' +
     P + ' .lg-prog{margin-top:6px;color:#1565c0;font-weight:bold}' +
+    P + ' .lg-locked{opacity:.35;pointer-events:none;filter:grayscale(1)}' +
     P + ' .lg-sendbox{border:2px solid #90caf9;background:#e3f2fd;border-radius:8px;padding:8px 10px;margin:6px 0}' +
     P + ' .lg-bar{position:relative;height:20px;background:#fff;border:1px solid #bbdefb;border-radius:10px;overflow:hidden;margin:6px 0}' +
     P + ' .lg-bar i{display:block;height:100%;width:0;background:' + '#1565c0' + ';transition:width .25s}' +
@@ -2142,49 +2143,32 @@
     '<select class="lg-class-sel" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:15px"></select>' +
     '<input type="text" class="lg-class" placeholder="輸入班別，例如：高二數學A班" style="display:none;width:100%;margin-top:6px;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:15px">' +
     '<div class="lg-muted">會放進訊息裡的 [班別]。</div>' +
-    '<div style="margin-top:10px"><b>需要補考嗎？</b>' +
-    '<label style="cursor:pointer;margin-left:12px"><input type="radio" name="lg-rtq" value="yes"> 要</label>' +
-    '<label style="cursor:pointer;margin-left:12px"><input type="radio" name="lg-rtq" value="no"> 不要</label>' +
-    ' <span class="lg-red lg-rtq-need">← 請選一個</span></div>' +
+    '<div class="lg-q" style="margin-top:12px;padding:8px 10px;border:2px solid #ffb74d;border-radius:8px;background:#fff8e1"><b style="font-size:15px">需要補考／輔導嗎？</b>' +
+    '<label style="cursor:pointer;margin-left:12px;font-size:15px"><input type="radio" name="lg-rtq" value="yes"> 要</label>' +
+    '<label style="cursor:pointer;margin-left:12px;font-size:15px"><input type="radio" name="lg-rtq" value="no"> 不要</label>' +
+    '<div class="lg-red lg-rtq-need" style="font-size:13px">← 一定要選「要」或「不要」，才能往下一步（③ 訊息範本、④ 預覽）。</div></div>' +
     '<div class="lg-retest-box" style="display:none;margin:6px 0 0 22px">' +
-    '<div>補考日期：<input type="date" class="lg-rt-date" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
-    '<div style="margin-top:6px">補考時間：<input type="time" class="lg-rt-start" value="15:00" step="900" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px">' +
-    ' 到 <input type="time" class="lg-rt-end" value="17:00" step="900" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
-    '<div style="margin-top:4px">訊息裡會寫成：<b class="lg-rt-show" style="color:#c62828">（請選日期）</b></div>' +
-    '<div style="margin-top:8px">補考對象：' +
+    '<div>輔導課：<select class="lg-tu-cls" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></select></div>' +
+    '<div class="lg-tu-hint" style="margin-top:4px;font-size:13px"></div>' +
+    '<div class="lg-tu-list" style="margin-top:2px"></div>' +
+    '<div style="margin-top:6px">補考／輔導日期：<input type="date" class="lg-tu-date" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
+    '<div style="margin-top:6px">補考／輔導時間：<input type="time" class="lg-tu-start" step="300" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px">' +
+    ' 到 <input type="time" class="lg-tu-end" step="300" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
+    '<div style="margin-top:4px">訊息裡會寫成：<b class="lg-tu-show" style="color:#c62828">（請選日期）</b> <span class="lg-tu-diff lg-warn"></span></div>' +
+    '<div style="margin-top:8px">補考／輔導對象：' +
     '<label style="cursor:pointer;margin-right:10px"><input type="radio" name="lg-rt" value="avg" checked> 低於班平均</label>' +
     '<label style="cursor:pointer;margin-right:10px"><input type="radio" name="lg-rt" value="below"> 分數低於 ' +
     '<input type="number" class="lg-retest-min" value="60" style="width:56px;padding:2px;border:1px solid #ccc;border-radius:6px"> 分</label>' +
     '<label style="cursor:pointer"><input type="radio" name="lg-rt" value="all"> 全部學生</label></div>' +
-    '<div style="margin-top:8px">補考那一句（會加在需要補考的學生訊息最後，可以改）：</div>' +
+    '<div style="margin-top:8px">補考／輔導那一句（會加在需要的學生訊息最後，可以改）：</div>' +
     '<textarea class="lg-rt-text" style="height:52px;margin-top:2px"></textarea>' +
     '</div>' +
-    '<div style="margin-top:10px"><b>需要輔導嗎？</b>' +
-    '<label style="cursor:pointer;margin-left:12px"><input type="radio" name="lg-tuq" value="yes"> 要</label>' +
-    '<label style="cursor:pointer;margin-left:12px"><input type="radio" name="lg-tuq" value="no"> 不要</label>' +
-    ' <span class="lg-red lg-tuq-need">← 請選一個</span></div>' +
-    '<div class="lg-tu-box" style="display:none;margin:6px 0 0 22px">' +
-    '<div>輔導課：<select class="lg-tu-cls" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></select></div>' +
-    '<div class="lg-tu-hint" style="margin-top:4px;font-size:13px"></div>' +
-    '<div class="lg-tu-list" style="margin-top:2px"></div>' +
-    '<div style="margin-top:6px">輔導日期：<input type="date" class="lg-tu-date" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
-    '<div style="margin-top:6px">輔導時間：<input type="time" class="lg-tu-start" step="300" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px">' +
-    ' 到 <input type="time" class="lg-tu-end" step="300" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
-    '<div style="margin-top:4px">訊息裡會寫成：<b class="lg-tu-show" style="color:#c62828">（請選日期）</b> <span class="lg-tu-diff lg-warn"></span></div>' +
-    '<div style="margin-top:8px">輔導對象：' +
-    '<label style="cursor:pointer;margin-right:10px"><input type="radio" name="lg-tu" value="avg" checked> 低於班平均</label>' +
-    '<label style="cursor:pointer;margin-right:10px"><input type="radio" name="lg-tu" value="below"> 分數低於 ' +
-    '<input type="number" class="lg-tu-min" value="60" style="width:56px;padding:2px;border:1px solid #ccc;border-radius:6px"> 分</label>' +
-    '<label style="cursor:pointer"><input type="radio" name="lg-tu" value="all"> 全部學生</label></div>' +
-    '<div style="margin-top:8px">輔導那一句（會加在需要輔導的學生訊息最後，可以改）：</div>' +
-    '<textarea class="lg-tu-text" style="height:44px;margin-top:2px"></textarea>' +
     '</div>' +
-    '</div>' +
-    '<div class="lg-step"><h4>③ 訊息範本</h4>' +
+    '<div class="lg-step lg-s3 lg-locked"><h4>③ 訊息範本</h4>' +
     '<div class="lg-muted">用 [欄位名稱] 代入每位學生的資料。點下面的按鈕可以插入欄位（綠色是工具自動算的）：</div>' +
     '<div class="lg-chips"></div>' +
     '<textarea class="lg-tpl" style="height:110px"></textarea></div>' +
-    '<div class="lg-step"><h4>④ 預覽</h4>' +
+    '<div class="lg-step lg-s4 lg-locked"><h4>④ 預覽</h4>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
       ? '<button class="lg-btn lg-send" disabled title="先按「搜尋預覽」並確認內容" style="background:#c62828;border-color:#c62828">開始發送</button>' +
@@ -2232,8 +2216,8 @@
 
   /* 把選的日期、時間組成「10/24(六)下午15:00-17:00」；沒選好就回傳空字串 */
   function retestTimeText() {
-    var d = $('.lg-rt-date').value, s = $('.lg-rt-start').value, e = $('.lg-rt-end').value;
-    if (!d || !s || !e) return '';
+    return slotText($('.lg-tu-date').value, $('.lg-tu-start').value, $('.lg-tu-end').value);
+    var d, s, e;
     var p = d.split('-'), dt = new Date(+p[0], +p[1] - 1, +p[2]);
     var wk = '日一二三四五六'.charAt(dt.getDay()), h = parseInt(s, 10);
     var part = h < 12 ? '上午' : (h < 18 ? '下午' : '晚上');
@@ -2243,7 +2227,6 @@
     var t = retestTimeText(), bad = $('.lg-rt-start').value && $('.lg-rt-end').value && $('.lg-rt-end').value <= $('.lg-rt-start').value;
     $('.lg-rt-show').textContent = bad ? '結束時間要晚於開始時間' : (t || '（請選日期）');
   }
-  ['.lg-rt-date', '.lg-rt-start', '.lg-rt-end'].forEach(function (s) { $(s).oninput = showRetestTime; $(s).onchange = showRetestTime; });
 
   /* ========== 是否補考／是否輔導：兩題都一定要回答「要」或「不要」才能預覽（防呆） ========== */
   function answer(name) { var r = panel.querySelector('input[name=' + name + ']:checked'); return r ? r.value : ''; }
@@ -2253,12 +2236,12 @@
         var yes = answer(name) === 'yes';
         $(box).style.display = yes ? 'block' : 'none';
         $('.' + name + '-need').style.display = 'none';
-        if (name === 'lg-tuq' && yes) { if (!$('.lg-tu-date').value) autoTutor(); else renderTutorHint(); }
+        panel.querySelectorAll('.lg-s3, .lg-s4').forEach(function (s) { s.classList.remove('lg-locked'); });
+        if (yes) { if (!$('.lg-tu-date').value) autoTutor(); else renderTutorHint(); }
       };
     });
   }
-  wireQ('lg-rtq', '.lg-retest-box'); wireQ('lg-tuq', '.lg-tu-box');
-  $('.lg-tu-text').value = TUTOR_SENTENCE;
+  wireQ('lg-rtq', '.lg-retest-box');
 
   /* ========== 輔導時間：依班別自動從課表帶入最近一堂，也可以自己改（臨時改時間） ========== */
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -2360,44 +2343,30 @@
       else if (cls) r['班別'] = cls;
     });
     /* 防呆：補考、輔導都要先回答「要」或「不要」 */
-    var rtq = answer('lg-rtq'), tuq = answer('lg-tuq');
-    if (!rtq) { $('.lg-rtq-need').style.display = ''; alert('請先回答②「需要補考嗎？」（要／不要）。'); $('.lg-rtq-need').scrollIntoView({ block: 'center' }); return; }
-    if (!tuq) { $('.lg-tuq-need').style.display = ''; alert('請先回答②「需要輔導嗎？」（要／不要）。'); $('.lg-tuq-need').scrollIntoView({ block: 'center' }); return; }
+    var rtq = answer('lg-rtq');
+    if (!rtq) { $('.lg-rtq-need').style.display = ''; alert('請先回答②「需要補考／輔導嗎？」（要／不要）。'); $('.lg-rtq-need').scrollIntoView({ block: 'center' }); return; }
     /* 補考：選「要」後，依「補考對象」決定哪些學生的訊息最後要加補考那一句 */
     var retest = rtq === 'yes', rtTime = retestTimeText();
     var rtMode = panel.querySelector('input[name=lg-rt]:checked').value;
     var rtMin = parseFloat($('.lg-retest-min').value), rtText = $('.lg-rt-text').value.trim();
     var sk = SCORE_HEADERS.filter(function (h) { return t.headers.indexOf(h) >= 0; })[0];
     if (retest) {
-      if (!$('.lg-rt-date').value) { alert('請選「補考日期」。'); $('.lg-rt-date').focus(); return; }
-      if (!rtTime || $('.lg-rt-end').value <= $('.lg-rt-start').value) { alert('請確認補考的開始和結束時間。'); $('.lg-rt-start').focus(); return; }
-      if (!rtText) { alert('請填「補考那一句」。'); $('.lg-rt-text').focus(); return; }
-      if (rtMode === 'below' && isNaN(rtMin)) { alert('請填補考的分數門檻，例如 60。'); $('.lg-retest-min').focus(); return; }
+      if (!$('.lg-tu-date').value) { alert('請選「補考／輔導日期」。'); $('.lg-tu-date').focus(); return; }
+      if (!rtTime || $('.lg-tu-end').value <= $('.lg-tu-start').value) { alert('請確認補考／輔導的開始和結束時間。'); $('.lg-tu-start').focus(); return; }
+      if (!rtText) { alert('請填「補考／輔導那一句」。'); $('.lg-rt-text').focus(); return; }
+      if (rtMode === 'below' && isNaN(rtMin)) { alert('請填分數門檻，例如 60。'); $('.lg-retest-min').focus(); return; }
       if (rtMode !== 'all' && !sk) { alert('Excel 沒有「分數」欄，只能選「全部學生」。'); return; }
-      if ($('.lg-rt-date').value < todayStr() && !confirm('補考日期 ' + rtTime + ' 已經過了，確定要用這個日期嗎？')) return;
-    }
-    /* 輔導：選「要」後，依「輔導對象」決定哪些學生的訊息最後要加輔導那一句 */
-    var tutor = tuq === 'yes', tuTime = slotText($('.lg-tu-date').value, $('.lg-tu-start').value, $('.lg-tu-end').value);
-    var tuMode = panel.querySelector('input[name=lg-tu]:checked').value, tuMin = parseFloat($('.lg-tu-min').value), tuText = $('.lg-tu-text').value.trim();
-    if (tutor) {
-      if (!$('.lg-tu-date').value) { alert('請選「輔導日期」。'); $('.lg-tu-date').focus(); return; }
-      if (!tuTime || $('.lg-tu-end').value <= $('.lg-tu-start').value) { alert('請確認輔導的開始和結束時間。'); $('.lg-tu-start').focus(); return; }
-      if (!tuText) { alert('請填「輔導那一句」。'); $('.lg-tu-text').focus(); return; }
-      if (tuMode === 'below' && isNaN(tuMin)) { alert('請填輔導的分數門檻，例如 60。'); $('.lg-tu-min').focus(); return; }
-      if (tuMode !== 'all' && !sk) { alert('Excel 沒有「分數」欄，輔導對象只能選「全部學生」。'); return; }
-      if ($('.lg-tu-date').value < todayStr() && !confirm('輔導日期 ' + tuTime + ' 已經過了，確定要用這個日期嗎？')) return;
+      if ($('.lg-tu-date').value < todayStr() && !confirm('補考／輔導日期 ' + rtTime + ' 已經過了，確定要用這個日期嗎？')) return;
     }
     /* 班平均：Excel 有「平均」欄就用它，沒有就用工具算的 */
     var avg = t.records.length ? parseFloat(t.records[0]['平均']) : NaN;
     if (retest && rtMode === 'avg' && isNaN(avg)) { alert('算不出班平均，請改選其他補考對象。'); return; }
-    if (tutor && tuMode === 'avg' && isNaN(avg)) { alert('算不出班平均，請改選其他輔導對象。'); return; }
-    state.rtq = rtq; state.tuq = tuq;
+    state.rtq = rtq;
     t.records.forEach(function (r) {
       var score = sk ? parseFloat(r[sk]) : NaN;
       var need = retest && (rtMode === 'all' || (!isNaN(score) && score < (rtMode === 'avg' ? avg : rtMin)));
       r.__retest = need ? rtText.split('[補考時間]').join(rtTime).split('{補考時間}').join(rtTime) : '';
-      var needT = tutor && (tuMode === 'all' || (!isNaN(score) && score < (tuMode === 'avg' ? avg : tuMin)));
-      r.__tutor = needT ? tuText.split('[輔導時間]').join(tuTime).split('{輔導時間}').join(tuTime) : '';
+      r.__tutor = '';
     });
     state.busy = true; this.disabled = true; $('.lg-send').disabled = true; $('.lg-out').innerHTML = '';
     try {
@@ -2432,8 +2401,8 @@
     var rtList = items.filter(function (it) { return it.retest; }).map(function (it) { return it.student; });
     var tuList = items.filter(function (it) { return it.tutor; }).map(function (it) { return it.student; });
     var h = '<div class="lg-box">共 ' + items.length + ' 位學生：會發給 <b>' + students + '</b> 位學生的家長，共 <b class="lg-total">' + send + '</b> 則' +
-      '<br>補考：<b>' + (state.rtq === 'yes' ? '要' : '不要') + '</b>　輔導：<b>' + (state.tuq === 'yes' ? '要' : '不要') + '</b>' +
-      (rtList.length ? '<br><span style="color:#c62828;font-weight:bold">需補考 ' + rtList.length + ' 位</span>：' + esc(rtList.join('、')) : '') +
+      '<br>補考／輔導：<b>' + (state.rtq === 'yes' ? '要' : '不要') + '</b>' +
+      (rtList.length ? '<br><span style="color:#c62828;font-weight:bold">需補考／輔導 ' + rtList.length + ' 位</span>：' + esc(rtList.join('、')) : '') +
       (tuList.length ? '<br><span style="color:#1565c0;font-weight:bold">需輔導 ' + tuList.length + ' 位</span>：' + esc(tuList.join('、')) : '') +
       (blocked.length ? '<br><span class="lg-red">不會發（' + blocked.length + ' 位）</span>：' + esc(blocked.join('、')) : '') +
       (unknown.length ? '<br><span class="lg-red">範本裡的 [' + esc(unknown.join(']、[')) + '] 在 Excel 找不到這個欄位，請修改範本。</span>' : '') +
@@ -2442,7 +2411,7 @@
     items.forEach(function (it, ii) {
       h += '<tr><td>' + esc(it.student) + scoreTag(it) + '<div class="lg-muted">Excel 第 ' + it.row + ' 列</div></td><td>';
       if (it.block) h += '<span class="lg-red">' + esc(it.block) + '，不會發</span>';
-      if (it.retest) h += '<div><span style="background:#fde7e9;color:#c62828;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需補考</span></div>';
+      if (it.retest) h += '<div><span style="background:#fde7e9;color:#c62828;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需補考／輔導</span></div>';
       if (it.tutor) h += '<div><span style="background:#e3f2fd;color:#1565c0;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需輔導</span></div>';
       it.warn.forEach(function (w) { h += '<div class="lg-warn">⚠ ' + esc(w) + '</div>'; });
       it.contacts.forEach(function (c, ci) {
@@ -2504,7 +2473,7 @@
     var nRt = 0, nTu = 0; Object.keys(names).length && jobs.forEach(function (j) { if (j.it.retest) names[j.it.student] |= 2; if (j.it.tutor) names[j.it.student] |= 4; });
     Object.keys(names).forEach(function (k) { if (names[k] & 2) nRt++; if (names[k] & 4) nTu++; });
     var ans = prompt('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
-      '補考：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '　輔導：' + (state.tuq === 'yes' ? '要（' + nTu + ' 位）' : '不要') + '\n送出後無法收回。\n\n請輸入數字 ' + jobs.length + ' 確認：');
+      '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請輸入數字 ' + jobs.length + ' 確認：');
     if (ans === null) return;
     if (String(ans).trim() !== String(jobs.length)) { alert('數字不對，已取消，沒有發送任何訊息。'); return; }
 
