@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.12', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.14', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1153,6 +1153,25 @@
     return r.status;
   }
 
+
+  /* 發一張照片（跟後台聊天室按「傳送圖片」一樣）。回傳 HTTP 狀態碼 */
+  async function sendFile(chatId, file, sendId) {
+    var c = await getCsrf(), headers = { 'Accept': 'application/json' };
+    headers[c.headerName] = c.token;
+    var fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('sendId', sendId);
+    var r = await fetch('/api/v1/bots/' + botId + '/chats/' + chatId + '/messages/sendFile', {
+      method: 'POST', headers: headers, credentials: 'same-origin', body: fd
+    });
+    return r.status;
+  }
+  /* 讀聊天室最新 50 則（只讀，不會變已讀）；讀不到回傳 null */
+  async function recentSent(chatId) {
+    try { var j = await api('/api/v3/bots/' + botId + '/chats/' + chatId + '/messages?limit=50'); return (j.list || []).filter(function (x) { return x.type === 'messageSent'; }); }
+    catch (e) { return null; }
+  }
+
   /* 送達確認：讀聊天室最新 50 則（只讀，不會變已讀），找這次發的那一則（用發送編號 sendId，或同樣文字＋時間）。
      回傳 true＝找到、false＝找不到、null＝讀不到 */
   async function inChat(chatId, sendId, text, sentAt) {
@@ -1300,7 +1319,9 @@
       if (onProgress) onProgress(i + 1, table.records.length, n);
       var msg = render(template, rec, table.headers);
       msg.text = msg.text.replace(/!/g, '！');   /* 驚嘆號一律全形 */
-      var item ={ student: n, row: rec.__row, text: msg.text, missing: msg.missing, unknown: msg.unknown, contacts: [], warn: [], block: '' };
+      var photos = table.photos || [];
+      var key = msg.text + (photos.length ? '|照片:' + photos.map(function (f) { return f.name + '/' + f.size; }).join(',') + '|' + state.porder : '');
+      var item ={ student: n, row: rec.__row, text: msg.text, photos: photos, key: key, missing: msg.missing, unknown: msg.unknown, contacts: [], warn: [], block: '' };
       var list;
       try { list = await searchContacts(n); } catch (e) { item.block = '搜尋失敗：' + e.message; out.push(item); continue; }
       var mine = list.filter(function (c) { return displayName(c).indexOf(n) >= 0 && !c.spam; });
@@ -1312,18 +1333,18 @@
       if (ambiguous) item.warn.push('找到的 LINE 看起來不是同一家人（名稱前面不一樣），請確認後再勾');
       if (others.length) item.warn.push('另有 ' + others.length + ' 個 LINE 只有本名相符，已排除');
       if (msg.missing.length) item.warn.push('「' + msg.missing.join('、') + '」是空的，這位不會發');
-      if (!msg.text.trim() && !msg.missing.length) item.warn.push('訊息是空的，這位不會發');
+      if (!msg.text.trim() && !msg.missing.length && !photos.length) item.warn.push('訊息是空的，這位不會發');
       for (var k = 0; k < mine.length; k++) {
         var c = mine[k], nick = displayName(c), chat = await getChat(c.contactId);
         var siblings = (nick.match(/\d{2,3}(?=[一-鿿])/g) || []).length >= 2;
-        var note = [], dup = alreadySent(c.contactId, msg.text);
+        var note = [], dup = alreadySent(c.contactId, key);
         if (dup) note.push('24 小時內已經發過一樣的內容，預設不重發');
         if (msg.text.length > 4900) note.push('訊息太長，LINE 可能不收');
         if (nick.indexOf('本人') >= 0) note.push('這是學生本人的 LINE');
         if (chat && chat.read === false) note.push('家長有未讀訊息，記得回覆');
         if (c.friend === false) note.push('非好友/已封鎖，可能收不到');
         if (siblings && !hasNameInTemplate) note.push('兄弟姊妹共用的 LINE，訊息裡最好寫孩子姓名');
-        var okToSend = !dup && msg.text.trim() && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
+        var okToSend = !dup && (msg.text.trim() || photos.length) && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
         item.contacts.push({ contactId: c.contactId, nick: nick, unread: !!(chat && chat.read === false), note: note.join('、'),
           checked: !!(!ambiguous && okToSend), pending: !!(ambiguous && okToSend) });
         await sleep(120);
@@ -1392,7 +1413,13 @@
     '<div class="lg-muted lg-msg-hint"></div>' +
     '<div class="lg-chips"></div>' +
     '<textarea class="lg-tpl" style="height:130px"></textarea>' +
-    '<div class="lg-fill"></div></div>' +
+    '<div class="lg-fill"></div>' +
+    '<div class="lg-photobar" style="margin-top:8px;padding:8px 10px;border:1px dashed #ce93d8;border-radius:8px;background:#fcf7fd">' +
+    '📷 <b>附加照片</b>（可以不加）：<input type="file" class="lg-photo" accept="image/jpeg,image/png" multiple>' +
+    '<div class="lg-muted">最多 5 張，每張 10MB 以內（jpg、png）。順序：' +
+    '<label style="cursor:pointer"><input type="radio" name="lm-porder" value="text" checked> 先文字再照片</label> ' +
+    '<label style="cursor:pointer"><input type="radio" name="lm-porder" value="photo"> 先照片再文字</label></div>' +
+    '<div class="lg-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div></div></div>' +
     '<div class="lg-step"><h4>④ 預覽</h4>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
@@ -1486,6 +1513,7 @@
       $('.lg-tpl').placeholder = '';
     }
     $('.lg-tplbar').style.display = m === 'same' ? 'block' : 'none';
+    $('.lg-photobar').style.display = m === 'same' ? 'block' : 'none';
     if (t) showInfo();
     renderFill(true);
   }
@@ -1526,19 +1554,53 @@
   };
   applyMode();
 
+
+  /* ========== 附加照片（只有統一訊息） ========== */
+  state.photos = [];
+  function photoThumb(f, size) {
+    if (!f.__url) f.__url = URL.createObjectURL(f);
+    return '<img src="' + f.__url + '" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:6px;border:1px solid #ddd">';
+  }
+  function renderThumbs() {
+    $('.lg-thumbs').innerHTML = state.photos.map(function (f, k) {
+      return '<div style="position:relative">' + photoThumb(f, 70) +
+        '<button class="lg-ph-x" data-k="' + k + '" title="拿掉" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#c62828;color:#fff;cursor:pointer;line-height:20px;padding:0">×</button>' +
+        '<div class="lg-muted" style="font-size:11px;text-align:center">' + (k + 1) + '</div></div>';
+    }).join('');
+    $('.lg-thumbs').querySelectorAll('.lg-ph-x').forEach(function (b) {
+      b.onclick = function () { state.photos.splice(+this.dataset.k, 1); renderThumbs(); photosChanged(); };
+    });
+  }
+  function photosChanged() { state.items = null; $('.lg-out').innerHTML = ''; $('.lg-send').disabled = true; }
+  $('.lg-photo').onchange = function () {
+    var bad = [];
+    Array.prototype.forEach.call(this.files, function (f) {
+      if (!/^image\/(jpeg|png)$/.test(f.type)) bad.push(f.name + '（不是 jpg／png）');
+      else if (f.size > 10 * 1024 * 1024) bad.push(f.name + '（超過 10MB）');
+      else if (state.photos.length >= 5) bad.push(f.name + '（最多 5 張）');
+      else state.photos.push(f);
+    });
+    this.value = '';
+    if (bad.length) alert('這些照片沒有加進去：\n' + bad.join('\n'));
+    renderThumbs(); photosChanged();
+  };
+  panel.querySelectorAll('input[name=lm-porder]').forEach(function (r) { r.onchange = photosChanged; });
+
   function prog(i, n, name) { $('.lg-prog').textContent = '處理中 ' + i + ' / ' + n + '：' + name; }
 
   $('.lg-preview').onclick = async function () {
     if (state.busy) return;
     if (!state.table || !state.table.records.length) { alert('請先放名單。'); return; }
     var tpl = $('.lg-tpl').value.trim();
-    if (!tpl) { alert('請先寫要發的訊息。'); $('.lg-tpl').focus(); return; }
+    var usePhotos = mode() === 'same' ? state.photos.slice() : [];
+    if (!tpl && !usePhotos.length) { alert('請先寫要發的訊息，或附加照片。'); $('.lg-tpl').focus(); return; }
+    state.porder = panel.querySelector('input[name=lm-porder]:checked').value;
     if (mode() === 'each' && !state.table.msgHeader && /\[訊息\]/.test(tpl)) { alert('Excel 裡找不到「訊息」欄。請在 Excel 加一欄標題叫「訊息」，或改用「統一訊息」。'); return; }
     /* 填空欄：全部填好才可以預覽；填的內容當成每個人都一樣的欄位 */
     var keys = fillKeys(), vals = {}, empty = [];
     keys.forEach(function (k) { vals[k] = fillValue(k); if (!vals[k]) empty.push('[' + k + ']'); });
     if (empty.length) { alert('還有空格沒填：' + empty.join('、')); var e1 = $('.lg-fill input'); if (e1) e1.focus(); return; }
-    var t0 = state.table, table = { headers: t0.headers.concat(keys), nameHeader: t0.nameHeader, msgHeader: t0.msgHeader,
+    var t0 = state.table, table = { headers: t0.headers.concat(keys), nameHeader: t0.nameHeader, msgHeader: t0.msgHeader, photos: usePhotos,
       records: t0.records.map(function (r) { var o = {}, k; for (k in r) o[k] = r[k]; for (k in vals) o[k] = vals[k]; return o; }) };
     state.busy = true; this.disabled = true; $('.lg-send').disabled = true; $('.lg-out').innerHTML = '';
     try {
@@ -1558,7 +1620,9 @@
       it.contacts.forEach(function (c) { if (c.unread) unread.push(c.nick); });
     });
     var unknown = []; items.forEach(function (it) { it.unknown.forEach(function (u) { if (unknown.indexOf(u) < 0) unknown.push(u); }); });
+    var nPh = items.length && items[0].photos ? items[0].photos.length : 0;
     var h = '<div class="lg-box">共 ' + items.length + ' 位：會發給 <b>' + students + '</b> 位學生的家長，共 <b class="lg-total">' + send + '</b> 則' +
+      (nPh ? '<br>📷 每位家長會收到：' + (items[0].text.trim() ? '文字＋' : '') + '<b>' + nPh + ' 張照片</b>（' + (state.porder === 'photo' ? '先照片再文字' : '先文字再照片') + '）' : '') +
       (blocked.length ? '<br><span class="lg-red">不會發（' + blocked.length + ' 位）</span>：' + esc(blocked.join('、')) : '') +
       (unknown.length ? '<br><span class="lg-red">訊息裡的 [' + esc(unknown.join(']、[')) + '] 在名單裡找不到這個欄位，請修改。</span>' : '') +
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
@@ -1571,7 +1635,8 @@
         h += '<label class="lg-c"><input type="checkbox" data-i="' + ii + '" data-c="' + ci + '"' + (c.checked ? ' checked' : '') + '> ' + esc(c.nick) +
           (c.note ? ' <span class="lg-warn">（' + esc(c.note) + '）</span>' : '') + '</label>';
       });
-      if (!it.block) h += '<div class="lg-msg">' + esc(it.text) + '</div>';
+      if (!it.block) h += '<div class="lg-msg">' + (it.text.trim() ? esc(it.text) : '<span class="lg-muted">（沒有文字，只發照片）</span>') +
+        (it.photos && it.photos.length ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + it.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>';
       h += '</td></tr>';
     });
     h += '</table>';
@@ -1610,6 +1675,31 @@
     $('.lg-stop').onclick = function () { state.stop = true; this.disabled = true; this.textContent = '停止中…（這一則發完就停）'; };
   }
 
+
+  /* 發送前確認：在視窗裡輸入則數（不用瀏覽器的跳出視窗，有些瀏覽器會擋掉） */
+  function askCount(text, n) {
+    return new Promise(function (resolve) {
+      var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
+      var box = document.createElement('div');
+      box.className = 'lg-box lg-ask';
+      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
+      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
+        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
+        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+        '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      var inp = box.querySelector('.lg-ask-n');
+      function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
+      box.querySelector('.lg-ask-ok').onclick = function () {
+        if (String(inp.value).trim() === String(n)) done(true);
+        else { box.querySelector('.lg-ask-err').textContent = '數字不對，請輸入 ' + n + '（或按「取消」）。'; inp.focus(); }
+      };
+      box.querySelector('.lg-ask-no').onclick = function () { done(false); $('.lg-prog').textContent = '已取消，沒有發送任何訊息。'; };
+      inp.onkeydown = function (e) { if (e.key === 'Enter') box.querySelector('.lg-ask-ok').click(); };
+      box.scrollIntoView({ block: 'center' }); inp.focus();
+    });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
   async function doSend(resendJobs) {
     if (state.busy || !state.items) return;
@@ -1622,9 +1712,9 @@
     if (!jobs.length) { alert('沒有勾選任何要發送的 LINE。'); return; }
     var names = {}; jobs.forEach(function (j) { names[j.it.student] = 1; });
     var nStudents = Object.keys(names).length;
-    var ans = prompt('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n送出後無法收回。\n\n請輸入數字 ' + jobs.length + ' 確認：');
-    if (ans === null) return;
-    if (String(ans).trim() !== String(jobs.length)) { alert('數字不對，已取消，沒有發送任何訊息。'); return; }
+    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
+      (jobs[0].it.photos && jobs[0].it.photos.length ? '每位：' + (jobs[0].it.text.trim() ? '文字＋' : '') + jobs[0].it.photos.length + ' 張照片\n' : '') + '送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+    if (!ans) return;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
@@ -1651,7 +1741,8 @@
     state.sbar(label, 0, jobs.length, '準備中…');
 
     var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];
-    jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
+    jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
+    var cur = null;
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i], it = job.it, c = job.c;
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
@@ -1663,21 +1754,39 @@
         }
         var nowNick = byStudent[it.student][c.contactId];
         if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒發）'; continue; }
-        if (alreadySent(c.contactId, it.text)) { c.result = '略過：24 小時內已發過一樣的內容'; continue; }
-        c.sendId = newSendId(); c.sentAt = Date.now();
-        var st = await sendText(c.contactId, it.text, c.sendId), tries = 0;
-        /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
-        while (st === 429 && tries < WAITS.length && !state.stop) {
-          gap = 3000;
-          state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…');
-          await sleep(WAITS[tries]); tries++;
-          c.sendId = newSendId(); c.sentAt = Date.now();
-          st = await sendText(c.contactId, it.text, c.sendId);
+        if (alreadySent(c.contactId, it.key)) { c.result = '略過：24 小時內已發過一樣的內容'; continue; }
+        /* 這一則要發的內容：文字＋照片；重發時只發還沒送到的部分 */
+        if (!resendJobs || !c.parts) c.parts = buildParts(it);
+        var failKind = '', st = 0;
+        for (var pi = 0; pi < c.parts.length; pi++) {
+          var part = c.parts[pi];
+          if (part.ok) continue;
+          if (state.stop) { failKind = 'stop'; break; }
+          cur = part;
+          if (c.parts.length > 1) state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick + '（' + partName(part) + '）');
+          part.sendId = newSendId(); part.sentAt = Date.now(); part.unsure = false;
+          st = await sendPart(c.contactId, it, part); var tries = 0;
+          /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
+          while (st === 429 && tries < WAITS.length && !state.stop) {
+            gap = 3000;
+            state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…');
+            await sleep(WAITS[tries]); tries++;
+            part.sendId = newSendId(); part.sentAt = Date.now();
+            st = await sendPart(c.contactId, it, part);
+          }
+          if (st >= 200 && st < 300) part.ok = true;
+          else if (st === 429) { part.sendId = null; failKind = 'blocked'; break; }
+          else { part.unsure = true; failKind = 'unsure'; break; }
+          if (pi < c.parts.length - 1) await sleep(800);
         }
-        if (st >= 200 && st < 300) { c.result = '成功'; markSent(c.contactId, it.text); done++; }
-        else if (st === 429) { c.result = '失敗：LINE 暫時擋下（沒發），可以按下面「重發」'; c.resend = 'safe'; }
+        cur = null;
+        if (!failKind) { c.result = '成功'; markSent(c.contactId, it.key); done++; }
+        else if (failKind === 'stop') { c.result = '已停止（還有部分沒發）'; c.resend = 'safe'; }
+        else if (failKind === 'blocked') { c.result = '失敗：LINE 暫時擋下（沒發），可以按下面「重發」'; c.resend = 'safe'; }
         else { c.result = '失敗（代碼 ' + st + '），請到聊天室確認有沒有送出'; c.resend = 'unsure'; }
       } catch (e) {
+        if (cur && cur.sendId) cur.unsure = true;
+        cur = null;
         c.result = '失敗（連線錯誤），請到聊天室確認有沒有送出'; c.resend = 'unsure';
       }
       await sleep(gap);
@@ -1698,7 +1807,7 @@
      - 「成功」的：找到＝✔ 已確認；找不到（等 2、5、15 秒各查一次都沒有）＝改成失敗，可以重發
      - 「不確定」的（連線錯誤等）：找到＝改成成功；找不到＝確定沒送出，可以重發 */
   async function verifySent(jobs) {
-    var todo = jobs.filter(function (j) { return j.c.sendId && (j.c.result === '成功' || j.c.resend === 'unsure'); });
+    var todo = jobs.filter(function (j) { return j.c.parts && (j.c.result === '成功' || j.c.resend === 'unsure') && j.c.parts.some(function (p) { return p.sendId; }); });
     var waits = [2000, 5000, 15000];
     for (var round = 0; round < waits.length && todo.length; round++) {
       state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), 0, todo.length, '等 ' + (waits[round] / 1000) + ' 秒後到聊天室檢查…');
@@ -1707,21 +1816,48 @@
       for (var i = 0; i < todo.length; i++) {
         var j = todo[i], c = j.c;
         state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), i + 1, todo.length, j.it.student + ' → ' + c.nick);
-        var found = await inChat(c.contactId, c.sendId, j.it.text, c.sentAt);
-        if (found === null) c.verify = 'error';
-        else if (found) {
+        var list = await recentSent(c.contactId);
+        if (list === null) { c.verify = 'error'; continue; }
+        var used = {};
+        c.parts.forEach(function (p) {
+          if (!p.sendId || p.seen) return;
+          var hit = list.filter(function (x, k) {
+            if (used[k]) return false;
+            if (x.sendId === p.sendId) return true;
+            if (p.kind === 'text') return x.message && x.message.text === j.it.text && x.timestamp >= p.sentAt - 120000;
+            return x.message && x.message.type !== 'text' && x.timestamp >= p.sentAt - 5000;
+          })[0];
+          if (hit) { used[list.indexOf(hit)] = 1; p.seen = true; p.ok = true; p.unsure = false; }
+        });
+        var missing = c.parts.filter(function (p) { return p.sendId && !p.seen; });
+        if (missing.length) { left.push(j); }
+        else if (c.parts.every(function (p) { return p.seen; })) {
           c.verify = 'ok';
-          if (c.result !== '成功') { c.result = '成功'; c.resend = ''; markSent(c.contactId, j.it.text); }
-        } else left.push(j);
+          if (c.result !== '成功') { c.result = '成功'; c.resend = ''; markSent(c.contactId, j.it.key); }
+        } else {
+          c.verify = 'partial'; c.result = '失敗：還有部分沒送出（已送到的不會重發），可以按下面「重發」'; c.resend = 'safe';
+        }
         await sleep(150);
       }
       todo = left;
     }
     todo.forEach(function (j) {
-      j.c.verify = 'missing'; j.c.result = '失敗：聊天室裡找不到這則訊息（沒送出），可以按下面「重發」'; j.c.resend = 'safe';
-      unmarkSent(j.c.contactId, j.it.text);
+      j.c.parts.forEach(function (p) { if (p.sendId && !p.seen) { p.ok = false; p.sendId = null; p.unsure = false; } });
+      j.c.verify = 'missing'; j.c.result = '失敗：聊天室裡找不到' + (j.c.parts.length > 1 ? '部分內容' : '這則訊息') + '（沒送出），可以按下面「重發」'; j.c.resend = 'safe';
+      unmarkSent(j.c.contactId, j.it.key);
     });
   }
+
+  /* 一則要發的內容拆成幾個部分：文字、照片 1、照片 2…（順序看設定） */
+  function buildParts(it) {
+    var parts = [];
+    if (it.text.trim()) parts.push({ kind: 'text' });
+    (it.photos || []).forEach(function (f, k) { parts.push({ kind: 'photo', i: k }); });
+    if (state.porder === 'photo') parts.sort(function (a, b) { return (a.kind === 'text') - (b.kind === 'text'); });
+    return parts;
+  }
+  function partName(p) { return p.kind === 'text' ? '文字' : '照片 ' + (p.i + 1); }
+  function sendPart(chatId, it, p) { return p.kind === 'text' ? sendText(chatId, it.text, p.sendId) : sendFile(chatId, it.photos[p.i], p.sendId); }
 
   function renderSendResult() {
     var items = state.items, ok = 0, verified = 0, fail = [], stopped = 0, skipped = [], notFound = [], unchecked = [], lines = ['學生\t發給\t結果'];
@@ -2458,6 +2594,31 @@
     $('.lg-stop').onclick = function () { state.stop = true; this.disabled = true; this.textContent = '停止中…（這一則發完就停）'; };
   }
 
+
+  /* 發送前確認：在視窗裡輸入則數（不用瀏覽器的跳出視窗，有些瀏覽器會擋掉） */
+  function askCount(text, n) {
+    return new Promise(function (resolve) {
+      var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
+      var box = document.createElement('div');
+      box.className = 'lg-box lg-ask';
+      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
+      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
+        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
+        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+        '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      var inp = box.querySelector('.lg-ask-n');
+      function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
+      box.querySelector('.lg-ask-ok').onclick = function () {
+        if (String(inp.value).trim() === String(n)) done(true);
+        else { box.querySelector('.lg-ask-err').textContent = '數字不對，請輸入 ' + n + '（或按「取消」）。'; inp.focus(); }
+      };
+      box.querySelector('.lg-ask-no').onclick = function () { done(false); $('.lg-prog').textContent = '已取消，沒有發送任何訊息。'; };
+      inp.onkeydown = function (e) { if (e.key === 'Enter') box.querySelector('.lg-ask-ok').click(); };
+      box.scrollIntoView({ block: 'center' }); inp.focus();
+    });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
   async function doSend(resendJobs) {
     if (state.busy || !state.items) return;
@@ -2472,10 +2633,9 @@
     var nStudents = Object.keys(names).length;
     var nRt = 0, nTu = 0; Object.keys(names).length && jobs.forEach(function (j) { if (j.it.retest) names[j.it.student] |= 2; if (j.it.tutor) names[j.it.student] |= 4; });
     Object.keys(names).forEach(function (k) { if (names[k] & 2) nRt++; if (names[k] & 4) nTu++; });
-    var ans = prompt('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
-      '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請輸入數字 ' + jobs.length + ' 確認：');
-    if (ans === null) return;
-    if (String(ans).trim() !== String(jobs.length)) { alert('數字不對，已取消，沒有發送任何訊息。'); return; }
+    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
+      '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+    if (!ans) return;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
