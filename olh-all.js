@@ -10,7 +10,7 @@
 
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py 和 publish.py，並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.2', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.3', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -41,7 +41,7 @@
   }
 
   var TABS = [
-    { key: 'tag', name: '批次上標籤', color: '#06c755' },
+    { key: 'tag', name: '批次上標籤', color: '#ef6c00' },
     { key: 'msg', name: '批次發訊息', color: '#6a1b9a' },
     { key: 'grade', name: '批次發成績', color: '#1565c0' }
   ];
@@ -56,6 +56,13 @@
     S + ' .olh-title span{display:block;font-size:12px;opacity:.92}' +
     S + ' .olh-hbtn{flex:none;cursor:pointer;background:rgba(255,255,255,.18);border:none;color:#fff;font-size:18px;line-height:1;width:30px;height:30px;border-radius:6px}' +
     S + ' .olh-hbtn:hover{background:rgba(255,255,255,.35)}' +
+    S + ' .olh-acct{flex:none;background:#fff8e1;border-bottom:2px solid #ffca28;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}' +
+    S + ' .olh-acct-l{font-size:15px;color:#555}' +
+    S + ' .olh-acct-n{font-size:22px;font-weight:bold;color:#b71c1c;background:#fff;border:2px solid #ffca28;border-radius:8px;padding:0 12px;line-height:1.5}' +
+    S + ' .olh-acct-h{font-size:12px;color:#777;flex-basis:100%}' +
+    S + '.olh-min .olh-acct-h{display:none}' +
+    /* 三個工具各自的「目前帳號」小框，改由上面這一條統一顯示 */
+    S + ' .lt-box:has(.lt-bot),' + S + ' .lg-box:has(.lg-bot){display:none!important}' +
     S + ' .olh-tabs{flex:none;display:flex;gap:6px;padding:8px 10px 0;background:#f5f7f8;border-bottom:1px solid #dfe5e8}' +
     S + ' .olh-tabs button{flex:1;padding:8px 6px;border:1px solid #dfe5e8;border-bottom:none;background:#fff;color:#555;border-radius:8px 8px 0 0;font-size:15px;cursor:pointer;margin-bottom:-1px}' +
     S + ' .olh-tabs button.on{color:#fff;font-weight:bold}' +
@@ -75,6 +82,8 @@
     '<div class="olh-title"><b>官方LINE小幫手 <small class="olh-ver" title="版本日期 ' + VERSION_DATE + '">v' + VERSION + '</small></b><span>鼎盛文教事業（高群、金頭腦資優、空中美語）</span></div>' +
     '<button class="olh-hbtn olh-min-btn" title="縮小／放大">－</button>' +
     '<button class="olh-hbtn olh-close" title="關閉">×</button></div>' +
+    '<div class="olh-acct"><span class="olh-acct-l">目前帳號</span><span class="olh-acct-n">讀取中…</span>' +
+    '<span class="olh-acct-h">帳號不對？先到 LINE 後台左上角切換帳號，再按一次書籤。</span></div>' +
     '<div class="olh-tabs">' + TABS.map(function (t) { return '<button data-k="' + t.key + '">' + t.name + '</button>'; }).join('') + '</div>' +
     '<div class="olh-main">' + TABS.map(function (t) { return '<div class="olh-slot" data-k="' + t.key + '" style="display:none"></div>'; }).join('') + '</div>';
   document.body.appendChild(shell);
@@ -84,6 +93,12 @@
   var TAB_KEY = 'olh-tab', POS_KEY = 'olh-pos';
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function save(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+
+  /* ========== 目前帳號 ========== */
+  fetch('/api/v1/bots/' + botId + '?noFilter=true', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (b) { q('.olh-acct-n').textContent = b.name || botId; })
+    .catch(function () { q('.olh-acct-n').textContent = '（讀不到帳號名稱）'; });
 
   /* ========== 分頁 ========== */
   function showTab(k) {
@@ -449,15 +464,15 @@
   var css = '' +
     '#' + PANEL_ID + '{position:fixed;top:12px;right:12px;width:520px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;z-index:2147483000;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.25);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif}' +
     '#' + PANEL_ID + ' *{box-sizing:border-box}' +
-    '#' + PANEL_ID + ' .lt-head{position:sticky;top:0;background:#06c755;color:#fff;padding:10px 14px;font-weight:bold;font-size:16px;display:flex;justify-content:space-between;align-items:center;z-index:1}' +
+    '#' + PANEL_ID + ' .lt-head{position:sticky;top:0;background:#ef6c00;color:#fff;padding:10px 14px;font-weight:bold;font-size:16px;display:flex;justify-content:space-between;align-items:center;z-index:1}' +
     '#' + PANEL_ID + ' .lt-x{cursor:pointer;background:none;border:none;color:#fff;font-size:20px;line-height:1}' +
     '#' + PANEL_ID + ' .lt-body{padding:12px 14px}' +
     '#' + PANEL_ID + ' .lt-step{margin-bottom:14px;padding-bottom:12px;border-bottom:1px dashed #ddd}' +
     '#' + PANEL_ID + ' .lt-step h4{margin:0 0 6px;font-size:15px}' +
     '#' + PANEL_ID + ' textarea{width:100%;height:70px;font-size:13px;padding:6px;border:1px solid #ccc;border-radius:6px}' +
     '#' + PANEL_ID + ' select,#' + PANEL_ID + ' input[type=text]{width:100%;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:14px}' +
-    '#' + PANEL_ID + ' button.lt-btn{padding:7px 12px;margin:4px 6px 0 0;border-radius:6px;border:1px solid #06c755;background:#06c755;color:#fff;font-size:14px;cursor:pointer}' +
-    '#' + PANEL_ID + ' button.lt-btn.lt-sec{background:#fff;color:#06a046}' +
+    '#' + PANEL_ID + ' button.lt-btn{padding:7px 12px;margin:4px 6px 0 0;border-radius:6px;border:1px solid #ef6c00;background:#ef6c00;color:#fff;font-size:14px;cursor:pointer}' +
+    '#' + PANEL_ID + ' button.lt-btn.lt-sec{background:#fff;color:#e65100}' +
     '#' + PANEL_ID + ' button.lt-btn:disabled{opacity:.4;cursor:not-allowed}' +
     '#' + PANEL_ID + ' table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}' +
     '#' + PANEL_ID + ' th,#' + PANEL_ID + ' td{border-bottom:1px solid #eee;padding:6px 4px;text-align:left;vertical-align:top}' +
@@ -465,16 +480,21 @@
     '#' + PANEL_ID + ' .lt-muted{color:#777;font-size:12px}' +
     '#' + PANEL_ID + ' .lt-red{color:#d32f2f;font-weight:bold}' +
     '#' + PANEL_ID + ' .lt-green{color:#2e7d32}' +
-    '#' + PANEL_ID + ' .lt-warn{color:#e65100}' +
+    '#' + PANEL_ID + ' .lt-warn{color:#a0522d}' +
     '#' + PANEL_ID + ' .lt-box{background:#f5f7f8;border-radius:6px;padding:8px 10px;margin-top:6px}' +
     '#' + PANEL_ID + ' label.lt-c{display:block;cursor:pointer}' +
-    '#' + PANEL_ID + ' .lt-prog{margin-top:6px;color:#06a046;font-weight:bold}' +
+    '#' + PANEL_ID + ' .lt-prog{margin-top:6px;color:#e65100;font-weight:bold}' +
     '#' + PANEL_ID + ' .lt-tabs{display:flex;gap:6px;margin-bottom:12px}' +
-    '#' + PANEL_ID + ' .lt-tabs button{flex:1;padding:8px;border:1px solid #06c755;background:#fff;color:#06a046;border-radius:6px;font-size:14px;cursor:pointer}' +
-    '#' + PANEL_ID + ' .lt-tabs button.on{background:#06c755;color:#fff;font-weight:bold}' +
+    '#' + PANEL_ID + ' .lt-tabs button{flex:1;padding:8px;border:1px solid #ef6c00;background:#fff;color:#e65100;border-radius:6px;font-size:14px;cursor:pointer}' +
+    '#' + PANEL_ID + ' .lt-tabs button.on{background:#ef6c00;color:#fff;font-weight:bold}' +
     '#' + PANEL_ID + ' .lt-scroll{max-height:240px;overflow:auto;border:1px solid #eee;border-radius:6px;padding:4px 6px;margin-top:4px}' +
-    '#' + PANEL_ID + ' input.lt-prefix{width:90px;font-size:18px;font-weight:bold;text-align:center;padding:4px;border:2px solid #06c755;border-radius:6px}' +
-    '#' + PANEL_ID + ' .lt-small{font-size:12px;margin-left:6px;cursor:pointer;color:#06a046;text-decoration:underline;background:none;border:none;padding:0}';
+    '#' + PANEL_ID + ' input.lt-prefix{width:90px;font-size:18px;font-weight:bold;text-align:center;padding:4px;border:2px solid #ef6c00;border-radius:6px}' +
+    '#' + PANEL_ID + ' .lt-bar{position:relative;display:none;height:18px;margin-top:6px;background:#eceff1;border-radius:9px;overflow:hidden}' +
+    '#' + PANEL_ID + ' .lt-bar i{display:block;height:100%;width:0;background:#ef6c00;transition:width .25s}' +
+    '#' + PANEL_ID + ' .lt-bar.ind i{width:30%;animation:lt-ind 1.2s linear infinite}' +
+    '#' + PANEL_ID + ' .lt-bar span{position:absolute;left:0;right:0;top:0;font-size:12px;line-height:18px;text-align:center;color:#222;font-weight:bold}' +
+    '@keyframes lt-ind{from{margin-left:-30%}to{margin-left:100%}}' +
+    '#' + PANEL_ID + ' .lt-small{font-size:12px;margin-left:6px;cursor:pointer;color:#e65100;text-decoration:underline;background:none;border:none;padding:0}';
 
   var panel = document.createElement('div');
   panel.id = PANEL_ID;
@@ -499,7 +519,7 @@
     '<button class="lt-btn p-preview">預覽名單</button>' +
     '<button class="lt-btn p-apply" disabled>開始上標籤</button>' +
     '<button class="lt-btn lt-sec p-stop" style="display:none">停止</button>' +
-    '<div class="lt-prog p-prog"></div></div>' +
+    '<div class="lt-prog p-prog"></div><div class="lt-bar p-bar"><i></i><span></span></div></div>' +
     '<div class="p-out"></div>' +
     '</div>' +
     '<div class="lt-t1">' +
@@ -514,7 +534,7 @@
     '<button class="lt-btn lt-preview">搜尋預覽</button>' +
     '<button class="lt-btn lt-apply" disabled>開始上標籤</button>' +
     '<button class="lt-btn lt-sec lt-check">只做漏上檢查</button>' +
-    '<div class="lt-prog"></div></div>' +
+    '<div class="lt-prog"></div><div class="lt-bar lt-bar1"><i></i><span></span></div></div>' +
     '<div class="lt-out"></div>' +
     '</div>' +
     '</div>';
@@ -562,8 +582,20 @@
     if (!$('.lt-tag').value) { alert('請先選要上的標籤。'); return false; }
     return true;
   }
-  function prog(i, n, name) { $('.lt-prog').textContent = '處理中 ' + i + ' / ' + n + '：' + name; }
-  function busy(b) { state.busy = b; panel.querySelectorAll('button.lt-btn').forEach(function (x) { x.disabled = b; }); if (!b) $('.lt-apply').disabled = !state.rows; }
+  /* 進度條：有總數就顯示百分比；沒有總數（例如讀取全部聯絡人）就顯示來回跑的動畫 */
+  function setBar(el, i, n) {
+    el.style.display = 'block';
+    if (!n) { el.classList.add('ind'); el.querySelector('i').style.width = ''; el.querySelector('span').textContent = ''; return; }
+    var p = Math.min(100, Math.round(i / n * 100));
+    el.classList.remove('ind'); el.querySelector('i').style.width = p + '%';
+    el.querySelector('span').textContent = p + '%（' + i + ' / ' + n + '）';
+  }
+  function hideBar(el) { el.style.display = 'none'; }
+  function prog(i, n, name) { $('.lt-prog').textContent = '處理中 ' + i + ' / ' + n + '：' + name; setBar($('.lt-bar1'), i, n); }
+  function busy(b) {
+    state.busy = b; panel.querySelectorAll('button.lt-btn').forEach(function (x) { x.disabled = b; });
+    if (!b) { $('.lt-apply').disabled = !state.rows; hideBar($('.lt-bar1')); }
+  }
 
   /* 搜尋預覽 */
   $('.lt-preview').onclick = async function () {
@@ -743,6 +775,7 @@
     st2.busy = b;
     $('.lt-t2').querySelectorAll('button.lt-btn').forEach(function (x) { if (!x.classList.contains('p-stop')) x.disabled = b; });
     q2('.p-stop').style.display = b ? '' : 'none';
+    if (b) setBar(q2('.p-bar')); else hideBar(q2('.p-bar'));
     if (!b) q2('.p-apply').disabled = !st2.targets;
   }
   function resetPreview() { st2.targets = null; q2('.p-apply').disabled = true; q2('.p-out').innerHTML = ''; }
@@ -871,9 +904,11 @@
       var tagId = await ensureTag(st2.newName);
       st2.newTagId = tagId;
       state.tags = await getTags(); fillTags();
-      await applyToItems(targets, tagId, exIds(), function (i, n, nick) { prog2('上標籤中 ' + i + ' / ' + n + '：' + nick); }, function () { return st2.stop; });
+      await applyToItems(targets, tagId, exIds(), function (i, n, nick) { prog2('上標籤中 ' + i + ' / ' + n + '：' + nick); setBar(q2('.p-bar'), i, n); }, function () { return st2.stop; });
       prog2('上完了，正在做漏上檢查（重新讀取全部聯絡人）…');
-      var fresh = await allContacts(function (n) { prog2('漏上檢查：讀取聯絡人 ' + n + ' 人'); });
+      var total = st2.all ? st2.all.length : 0;
+      setBar(q2('.p-bar'), 0, total);
+      var fresh = await allContacts(function (n) { prog2('漏上檢查：讀取聯絡人 ' + n + ' 人'); setBar(q2('.p-bar'), Math.min(n, total), total); });
       renderResult2(targets, fresh, tagId);
       prog2(st2.stop ? '已停止。' : '完成！');
     } catch (e) { alert('發生錯誤：' + e.message); prog2('發生錯誤：' + e.message); }
