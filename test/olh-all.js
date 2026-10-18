@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.4', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.5', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -433,7 +433,7 @@
 
   /* 漏上檢查：名單上每位學生是否都有上到；標籤裡有沒有不在名單上的人 */
   async function check(names, tagId, onProgress) {
-    var res = { ok: [], missing: [], notFound: [], extra: [], tagCount: null };
+    var res = { ok: [], missing: [], notFound: [], extra: [], extraItems: [], tagCount: null };
     var taggedIds = {};
     for (var i = 0; i < names.length; i++) {
       var n = names[i];
@@ -453,7 +453,7 @@
     members.forEach(function (m) {
       var nick = displayName(m);
       var inList = names.some(function (n) { return nick.indexOf(n) >= 0; });
-      if (!inList) res.extra.push(nick);
+      if (!inList) { res.extra.push(nick); res.extraItems.push({ id: m.chatId, nick: nick }); }
     });
     var tags = await getTags();
     var t = tags.filter(function (x) { return x.tagId === tagId; })[0];
@@ -596,7 +596,10 @@
   function prog(i, n, name) { $('.lt-prog').textContent = '處理中 ' + i + ' / ' + n + '：' + name; setBar($('.lt-bar1'), i, n); }
   function busy(b) {
     state.busy = b; panel.querySelectorAll('button.lt-btn').forEach(function (x) { x.disabled = b; });
-    if (!b) { $('.lt-apply').disabled = !state.rows; hideBar($('.lt-bar1')); }
+    if (!b) {
+      $('.lt-apply').disabled = !state.rows; hideBar($('.lt-bar1'));
+      var ex = $('.lt-ex-remove'); if (ex && ex.recount) ex.recount();
+    }
   }
 
   /* 搜尋預覽 */
@@ -723,9 +726,13 @@
       h += '</table><div class="lt-muted">這些家長 LINE 名稱裡有學生姓名，但沒有這個標籤。如果是同名的別人，可以不用管。</div></div>';
     }
     if (failed.length) h += '<div class="lt-box"><span class="lt-red">上標籤失敗</span>：<br>' + failed.map(esc).join('<br>') + '</div>';
-    if (chk.extra.length) h += '<div class="lt-box"><span class="lt-warn">多出來的（' + chk.extra.length + ' 個）</span>：標籤裡有，但不是名單上的學生：' +
-      '<div style="max-height:160px;overflow:auto;margin-top:4px">' + chk.extra.map(esc).join('<br>') + '</div>' +
-      '<div class="lt-muted">可能是以前就上過、兄弟姊妹共用的 LINE，或上錯人，請確認。</div></div>';
+    if (chk.extraItems.length) h += '<div class="lt-box lt-extra"><span class="lt-warn">多出來的（' + chk.extraItems.length + ' 個）</span>：標籤裡有，但不是名單上的學生。' +
+      '<div class="lt-muted">可能是以前就上過、兄弟姊妹共用的 LINE，或上錯人。<b>有勾＝保留標籤；取消勾選＝要拿掉這個標籤</b>（其他標籤不會動）。</div>' +
+      '<div style="margin-top:4px"><button class="lt-small lt-ex-all">全部勾選</button><button class="lt-small lt-ex-none">全部取消</button></div>' +
+      '<div class="lt-scroll" style="max-height:220px">' + chk.extraItems.map(function (x, i) {
+        return '<label class="lt-c"><input type="checkbox" class="lt-keep" data-i="' + i + '" checked> ' + esc(x.nick) + ' <span class="lt-ex-res"></span></label>';
+      }).join('') + '</div>' +
+      '<button class="lt-btn lt-ex-remove" style="background:#c62828;border-color:#c62828" disabled>拿掉沒勾的標籤（<span class="lt-ex-n">0</span> 個）</button></div>';
 
     lines.push('', '漏上檢查');
     lines.push('找不到 LINE：' + (chk.notFound.join('、') || '無'));
@@ -735,10 +742,48 @@
 
     h += '<button class="lt-btn lt-sec lt-copy">複製結果（可貼到 Excel / LINE）</button>';
     $('.lt-out').innerHTML = h;
+    if (chk.extraItems.length) wireExtra(chk.extraItems, state.tagId, name);
     $('.lt-copy').onclick = function () {
       var text = '帳號：' + (state.botName || '') + '\n標籤：' + name + '\n' + lines.join('\n');
       navigator.clipboard.writeText(text).then(function () { alert('已複製！'); }, function () { prompt('請手動複製：', text); });
     };
+  }
+
+  /* 多出來的人：取消勾選的，按按鈕把這個標籤拿掉（重新讀最新標籤，只拿掉這一個，其他保留） */
+  function wireExtra(items, tagId, name) {
+    var box = $('.lt-extra');
+    var boxes = function () { return box.querySelectorAll('input.lt-keep'); };
+    function todo() { return Array.prototype.filter.call(boxes(), function (cb) { return !cb.checked && !cb.disabled; }); }
+    function count() { var n = todo().length; box.querySelector('.lt-ex-n').textContent = n; box.querySelector('.lt-ex-remove').disabled = !n || state.busy; }
+    box.querySelector('.lt-ex-remove').recount = count;
+    boxes().forEach(function (cb) { cb.onchange = count; });
+    box.querySelector('.lt-ex-all').onclick = function () { boxes().forEach(function (cb) { if (!cb.disabled) cb.checked = true; }); count(); };
+    box.querySelector('.lt-ex-none').onclick = function () { boxes().forEach(function (cb) { if (!cb.disabled) cb.checked = false; }); count(); };
+    box.querySelector('.lt-ex-remove').onclick = async function () {
+      var list = todo();
+      if (!list.length || state.busy) return;
+      if (!confirm('帳號：' + (state.botName || '') + '\n要把 ' + list.length + ' 個 LINE 的「' + name + '」標籤拿掉嗎？\n（只拿掉這一個標籤，其他標籤會保留）')) return;
+      busy(true); box.querySelector('.lt-ex-remove').disabled = true;
+      var ok = 0;
+      for (var i = 0; i < list.length; i++) {
+        var cb = list[i], it = items[cb.dataset.i], res = cb.parentNode.querySelector('.lt-ex-res');
+        prog(i + 1, list.length, '拿掉標籤：' + it.nick);
+        try {
+          var found = (await searchContacts(it.nick)).filter(function (c) { return c.contactId === it.id; })[0];
+          if (!found) { res.innerHTML = '<span class="lt-red">失敗：找不到這個 LINE</span>'; continue; }
+          var cur = found.tagIds || [];
+          if (cur.indexOf(tagId) < 0) { res.innerHTML = '<span class="lt-muted">（原本就沒有）</span>'; cb.disabled = true; continue; }
+          await setContactTags(it.id, cur.filter(function (t) { return t !== tagId; }));
+          res.innerHTML = '<span class="lt-green">✔ 已拿掉</span>'; cb.disabled = true; ok++;
+        } catch (e) { res.innerHTML = '<span class="lt-red">失敗：' + esc(e.message) + '</span>'; }
+        await sleep(250);
+      }
+      busy(false);
+      getTags().then(function (t) { state.tags = t; fillTags(); });
+      $('.lt-prog').textContent = '拿掉標籤完成：成功 ' + ok + ' / ' + list.length + ' 個。';
+      count();
+    };
+    count();
   }
 
   /* ========== 分頁切換 ========== */
