@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.5', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.6', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1091,14 +1091,25 @@
     return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   }
   /* 發一則文字訊息（跟後台聊天室手動送出一樣）。回傳 HTTP 狀態碼；200＝成功、429＝太快被擋（確定沒送出） */
-  async function sendText(chatId, text) {
+  async function sendText(chatId, text, sendId) {
     var c = await getCsrf(), headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
     headers[c.headerName] = c.token;
     var r = await fetch('/api/v1/bots/' + botId + '/chats/' + chatId + '/messages/send', {
       method: 'POST', headers: headers, credentials: 'same-origin',
-      body: JSON.stringify({ type: 'text', text: text, sendId: newSendId() })
+      body: JSON.stringify({ type: 'text', text: text, sendId: sendId })
     });
     return r.status;
+  }
+
+  /* 送達確認：讀聊天室最新 50 則（只讀，不會變已讀），找這次發的那一則（用發送編號 sendId，或同樣文字＋時間）。
+     回傳 true＝找到、false＝找不到、null＝讀不到 */
+  async function inChat(chatId, sendId, text, sentAt) {
+    try {
+      var j = await api('/api/v3/bots/' + botId + '/chats/' + chatId + '/messages?limit=50');
+      return (j.list || []).some(function (x) {
+        return x.type === 'messageSent' && (x.sendId === sendId || (x.message && x.message.text === text && x.timestamp >= sentAt - 120000));
+      });
+    } catch (e) { return null; }
   }
 
   /* 防重複：記住 24 小時內發過的「同一個 LINE＋同一段內容」（只存在這台電腦的瀏覽器） */
@@ -1110,6 +1121,7 @@
   }
   function markSent(chatId, text) { try { var o = sentLog(); o[chatId + ':' + hash(text)] = Date.now(); localStorage.setItem(SENT_KEY, JSON.stringify(o)); } catch (e) { } }
   function alreadySent(chatId, text) { return !!sentLog()[chatId + ':' + hash(text)]; }
+  function unmarkSent(chatId, text) { try { var o = sentLog(); delete o[chatId + ':' + hash(text)]; localStorage.setItem(SENT_KEY, JSON.stringify(o)); } catch (e) { } }
 
   function searchContacts(q) {
     return api('/api/v2/bots/' + botId + '/contacts?query=' + encodeURIComponent(q) + '&limit=50').then(function (j) { return j.list || []; });
@@ -1561,7 +1573,7 @@
     var stopBtn = $('.lg-stop'); stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.textContent = '停止發送';
 
     var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];
-    jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; });
+    jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i], it = job.it, c = job.c;
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
@@ -1574,13 +1586,15 @@
         var nowNick = byStudent[it.student][c.contactId];
         if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒發）'; continue; }
         if (alreadySent(c.contactId, it.text)) { c.result = '略過：24 小時內已發過一樣的內容'; continue; }
-        var st = await sendText(c.contactId, it.text), tries = 0;
+        c.sendId = newSendId(); c.sentAt = Date.now();
+        var st = await sendText(c.contactId, it.text, c.sendId), tries = 0;
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
           $('.lg-prog').textContent = '發送中 ' + (i + 1) + ' / ' + jobs.length + '：LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…';
           await sleep(WAITS[tries]); tries++;
-          st = await sendText(c.contactId, it.text);
+          c.sendId = newSendId(); c.sentAt = Date.now();
+          st = await sendText(c.contactId, it.text, c.sendId);
         }
         if (st >= 200 && st < 300) { c.result = '成功'; markSent(c.contactId, it.text); done++; }
         else if (st === 429) { c.result = '失敗：LINE 暫時擋下（沒發），可以按下面「重發」'; c.resend = 'safe'; }
@@ -1591,14 +1605,46 @@
       await sleep(gap);
     }
     stopBtn.style.display = 'none';
+    await verifySent(jobs);
     $('.lg-preview').disabled = false;
     state.busy = false;
-    $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + done + ' 則。';
+    var okN = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
+    var vN = jobs.filter(function (j) { return j.c.verify === 'ok'; }).length;
+    $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
   }
 
+  /* 發完之後到每個聊天室確認真的有這則訊息（和批次發成績同一套）：
+     - 「成功」的：找到＝✔ 已確認；找不到（等 2、5、15 秒各查一次都沒有）＝改成失敗，可以重發
+     - 「不確定」的（連線錯誤等）：找到＝改成成功；找不到＝確定沒送出，可以重發 */
+  async function verifySent(jobs) {
+    var todo = jobs.filter(function (j) { return j.c.sendId && (j.c.result === '成功' || j.c.resend === 'unsure'); });
+    var waits = [2000, 5000, 15000];
+    for (var round = 0; round < waits.length && todo.length; round++) {
+      $('.lg-prog').textContent = '送達確認：' + (waits[round] / 1000) + ' 秒後到聊天室檢查' + (round ? '（第 ' + (round + 1) + ' 次，還有 ' + todo.length + ' 則沒找到）' : '') + '…';
+      await sleep(waits[round]);
+      var left = [];
+      for (var i = 0; i < todo.length; i++) {
+        var j = todo[i], c = j.c;
+        $('.lg-prog').textContent = '送達確認中 ' + (i + 1) + ' / ' + todo.length + '：' + j.it.student + ' → ' + c.nick;
+        var found = await inChat(c.contactId, c.sendId, j.it.text, c.sentAt);
+        if (found === null) c.verify = 'error';
+        else if (found) {
+          c.verify = 'ok';
+          if (c.result !== '成功') { c.result = '成功'; c.resend = ''; markSent(c.contactId, j.it.text); }
+        } else left.push(j);
+        await sleep(150);
+      }
+      todo = left;
+    }
+    todo.forEach(function (j) {
+      j.c.verify = 'missing'; j.c.result = '失敗：聊天室裡找不到這則訊息（沒送出），可以按下面「重發」'; j.c.resend = 'safe';
+      unmarkSent(j.c.contactId, j.it.text);
+    });
+  }
+
   function renderSendResult() {
-    var items = state.items, ok = 0, fail = [], stopped = 0, skipped = [], notFound = [], unchecked = [], lines = ['學生\t發給\t結果'];
+    var items = state.items, ok = 0, verified = 0, fail = [], stopped = 0, skipped = [], notFound = [], unchecked = [], lines = ['學生\t發給\t結果'];
     var h = '<table><tr><th style="width:84px">學生</th><th>發給</th><th style="width:38%">結果</th></tr>';
     items.forEach(function (it) {
       var sent = it.contacts.filter(function (c) { return c.result; });
@@ -1610,12 +1656,15 @@
         else if (c.result.indexOf('已停止') === 0) stopped++;
         else if (c.result.indexOf('略過') === 0) skipped.push(it.student + '：' + c.nick);
         else fail.push(it.student + '：' + c.nick + '（' + c.result + '）');
-        h += '<tr><td>' + (k ? '' : esc(it.student)) + '</td><td>' + esc(c.nick) + '</td><td style="' + cls + '">' + esc(c.result) + '</td></tr>';
-        lines.push(it.student + '\t' + c.nick + '\t' + c.result);
+        var vmark = c.verify === 'ok' ? '（✔ 已在聊天室確認）' : (c.verify === 'error' && c.result === '成功' ? '（無法確認，請到聊天室看一下）' : '');
+        if (c.verify === 'ok') verified++;
+        h += '<tr><td>' + (k ? '' : esc(it.student)) + '</td><td>' + esc(c.nick) + '</td><td style="' + cls + '">' + esc(c.result) +
+          (vmark ? '<div style="font-weight:normal;font-size:12px">' + esc(vmark) + '</div>' : '') + '</td></tr>';
+        lines.push(it.student + '\t' + c.nick + '\t' + c.result + vmark);
       });
     });
     h += '</table>';
-    var box = '<div class="lg-box"><b>發送結果</b>：成功 <b style="color:#2e7d32">' + ok + '</b> 則' +
+    var box = '<div class="lg-box"><b>發送結果</b>：成功 <b style="color:#2e7d32">' + ok + '</b> 則（其中 <b style="color:#2e7d32">' + verified + '</b> 則已在聊天室確認送達）' +
       (fail.length ? '，<span class="lg-red">失敗 ' + fail.length + ' 則</span>' : '') +
       (stopped ? '，<span class="lg-warn">停止沒發 ' + stopped + ' 則</span>' : '') +
       (skipped.length ? '，<span class="lg-warn">略過 ' + skipped.length + ' 則</span>' : '') + '</div>';
@@ -1694,14 +1743,25 @@
     return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   }
   /* 發一則文字訊息（跟後台聊天室手動送出一樣）。回傳 HTTP 狀態碼；200＝成功、429＝太快被擋（確定沒送出） */
-  async function sendText(chatId, text) {
+  async function sendText(chatId, text, sendId) {
     var c = await getCsrf(), headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
     headers[c.headerName] = c.token;
     var r = await fetch('/api/v1/bots/' + botId + '/chats/' + chatId + '/messages/send', {
       method: 'POST', headers: headers, credentials: 'same-origin',
-      body: JSON.stringify({ type: 'text', text: text, sendId: newSendId() })
+      body: JSON.stringify({ type: 'text', text: text, sendId: sendId })
     });
     return r.status;
+  }
+
+  /* 送達確認：讀聊天室最新 50 則（只讀，不會變已讀），找這次發的那一則（用發送編號 sendId，或同樣文字＋時間）。
+     回傳 true＝找到、false＝找不到、null＝讀不到 */
+  async function inChat(chatId, sendId, text, sentAt) {
+    try {
+      var j = await api('/api/v3/bots/' + botId + '/chats/' + chatId + '/messages?limit=50');
+      return (j.list || []).some(function (x) {
+        return x.type === 'messageSent' && (x.sendId === sendId || (x.message && x.message.text === text && x.timestamp >= sentAt - 120000));
+      });
+    } catch (e) { return null; }
   }
 
   /* 防重複：記住 24 小時內發過的「同一個 LINE＋同一段內容」（只存在這台電腦的瀏覽器） */
@@ -1713,6 +1773,7 @@
   }
   function markSent(chatId, text) { try { var o = sentLog(); o[chatId + ':' + hash(text)] = Date.now(); localStorage.setItem(SENT_KEY, JSON.stringify(o)); } catch (e) { } }
   function alreadySent(chatId, text) { return !!sentLog()[chatId + ':' + hash(text)]; }
+  function unmarkSent(chatId, text) { try { var o = sentLog(); delete o[chatId + ':' + hash(text)]; localStorage.setItem(SENT_KEY, JSON.stringify(o)); } catch (e) { } }
 
   function searchContacts(q) {
     return api('/api/v2/bots/' + botId + '/contacts?query=' + encodeURIComponent(q) + '&limit=50').then(function (j) { return j.list || []; });
@@ -2242,7 +2303,7 @@
     var stopBtn = $('.lg-stop'); stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.textContent = '停止發送';
 
     var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];
-    jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; });
+    jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i], it = job.it, c = job.c;
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
@@ -2255,13 +2316,15 @@
         var nowNick = byStudent[it.student][c.contactId];
         if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒發）'; continue; }
         if (alreadySent(c.contactId, it.text)) { c.result = '略過：24 小時內已發過一樣的內容'; continue; }
-        var st = await sendText(c.contactId, it.text), tries = 0;
+        c.sendId = newSendId(); c.sentAt = Date.now();
+        var st = await sendText(c.contactId, it.text, c.sendId), tries = 0;
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
           $('.lg-prog').textContent = '發送中 ' + (i + 1) + ' / ' + jobs.length + '：LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…';
           await sleep(WAITS[tries]); tries++;
-          st = await sendText(c.contactId, it.text);
+          c.sendId = newSendId(); c.sentAt = Date.now();
+          st = await sendText(c.contactId, it.text, c.sendId);
         }
         if (st >= 200 && st < 300) { c.result = '成功'; markSent(c.contactId, it.text); done++; }
         else if (st === 429) { c.result = '失敗：LINE 暫時擋下（沒發），可以按下面「重發」'; c.resend = 'safe'; }
@@ -2272,14 +2335,46 @@
       await sleep(gap);
     }
     stopBtn.style.display = 'none';
+    await verifySent(jobs);
     $('.lg-preview').disabled = false;
     state.busy = false;
-    $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + done + ' 則。';
+    var okN = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
+    var vN = jobs.filter(function (j) { return j.c.verify === 'ok'; }).length;
+    $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
   }
 
+  /* 發完之後到每個聊天室確認真的有這則訊息：
+     - 「成功」的：找到＝✔ 已確認；找不到（等 2、5、15 秒各查一次都沒有）＝改成失敗，可以重發
+     - 「不確定」的（連線錯誤等）：找到＝改成成功；找不到＝確定沒送出，可以重發 */
+  async function verifySent(jobs) {
+    var todo = jobs.filter(function (j) { return j.c.sendId && (j.c.result === '成功' || j.c.resend === 'unsure'); });
+    var waits = [2000, 5000, 15000];
+    for (var round = 0; round < waits.length && todo.length; round++) {
+      $('.lg-prog').textContent = '送達確認：' + (waits[round] / 1000) + ' 秒後到聊天室檢查' + (round ? '（第 ' + (round + 1) + ' 次，還有 ' + todo.length + ' 則沒找到）' : '') + '…';
+      await sleep(waits[round]);
+      var left = [];
+      for (var i = 0; i < todo.length; i++) {
+        var j = todo[i], c = j.c;
+        $('.lg-prog').textContent = '送達確認中 ' + (i + 1) + ' / ' + todo.length + '：' + j.it.student + ' → ' + c.nick;
+        var found = await inChat(c.contactId, c.sendId, j.it.text, c.sentAt);
+        if (found === null) c.verify = 'error';
+        else if (found) {
+          c.verify = 'ok';
+          if (c.result !== '成功') { c.result = '成功'; c.resend = ''; markSent(c.contactId, j.it.text); }
+        } else left.push(j);
+        await sleep(150);
+      }
+      todo = left;
+    }
+    todo.forEach(function (j) {
+      j.c.verify = 'missing'; j.c.result = '失敗：聊天室裡找不到這則訊息（沒送出），可以按下面「重發」'; j.c.resend = 'safe';
+      unmarkSent(j.c.contactId, j.it.text);
+    });
+  }
+
   function renderSendResult() {
-    var items = state.items, ok = 0, fail = [], stopped = 0, skipped = [], notFound = [], unchecked = [], lines = ['學生\t發給\t結果'];
+    var items = state.items, ok = 0, verified = 0, fail = [], stopped = 0, skipped = [], notFound = [], unchecked = [], lines = ['學生\t發給\t結果'];
     var h = '<table><tr><th style="width:84px">學生</th><th>發給</th><th style="width:38%">結果</th></tr>';
     items.forEach(function (it) {
       var sent = it.contacts.filter(function (c) { return c.result; });
@@ -2291,12 +2386,15 @@
         else if (c.result.indexOf('已停止') === 0) stopped++;
         else if (c.result.indexOf('略過') === 0) skipped.push(it.student + '：' + c.nick);
         else fail.push(it.student + '：' + c.nick + '（' + c.result + '）');
-        h += '<tr><td>' + (k ? '' : esc(it.student) + scoreTag(it)) + '</td><td>' + esc(c.nick) + '</td><td style="' + cls + '">' + esc(c.result) + '</td></tr>';
-        lines.push(it.student + '\t' + c.nick + '\t' + c.result);
+        var vmark = c.verify === 'ok' ? '（✔ 已在聊天室確認）' : (c.verify === 'error' && c.result === '成功' ? '（無法確認，請到聊天室看一下）' : '');
+        if (c.verify === 'ok') verified++;
+        h += '<tr><td>' + (k ? '' : esc(it.student) + scoreTag(it)) + '</td><td>' + esc(c.nick) + '</td><td style="' + cls + '">' + esc(c.result) +
+          (vmark ? '<div style="font-weight:normal;font-size:12px">' + esc(vmark) + '</div>' : '') + '</td></tr>';
+        lines.push(it.student + '\t' + c.nick + '\t' + c.result + vmark);
       });
     });
     h += '</table>';
-    var box = '<div class="lg-box"><b>發送結果</b>：成功 <b style="color:#2e7d32">' + ok + '</b> 則' +
+    var box = '<div class="lg-box"><b>發送結果</b>：成功 <b style="color:#2e7d32">' + ok + '</b> 則（其中 <b style="color:#2e7d32">' + verified + '</b> 則已在聊天室確認送達）' +
       (fail.length ? '，<span class="lg-red">失敗 ' + fail.length + ' 則</span>' : '') +
       (stopped ? '，<span class="lg-warn">停止沒發 ' + stopped + ' 則</span>' : '') +
       (skipped.length ? '，<span class="lg-warn">略過 ' + skipped.length + ' 則</span>' : '') + '</div>';
