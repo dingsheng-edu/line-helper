@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.6', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.7', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -49,7 +49,13 @@
 
   var S = '#' + SHELL_ID;
   var css = '' +
-    S + '{position:fixed;top:12px;right:12px;width:640px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif;overflow:hidden}' +
+    S + '{position:fixed;top:12px;right:12px;width:640px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif;overflow:hidden;resize:both;min-width:360px;min-height:180px}' +
+    S + ' .olh-set{flex:none;display:none;background:#e8f5e9;border-bottom:1px solid #c8e6c9;padding:8px 14px;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}' +
+    S + '.olh-set-on .olh-set{display:flex}' +
+    S + ' .olh-sbtn{padding:2px 12px;border:1px solid #06c755;background:#fff;color:#06a046;border-radius:6px;cursor:pointer;font-size:15px;line-height:1.5}' +
+    S + ' .olh-sbtn:hover{background:#f1fbf4}' +
+    S + ' .olh-zv{min-width:52px;text-align:center;font-weight:bold;font-size:15px}' +
+    S + ' .olh-set-h{flex-basis:100%;font-size:12px;color:#555}' +
     S + ' .olh-head{flex:none;background:#06c755;color:#fff;padding:8px 10px 8px 14px;display:flex;align-items:center;gap:8px;cursor:move;user-select:none}' +
     S + ' .olh-title{flex:1;min-width:0}' +
     S + ' .olh-title b{display:block;font-size:17px;line-height:1.3}' +
@@ -68,8 +74,8 @@
     S + ' .olh-tabs button{flex:1;padding:8px 6px;border:1px solid #dfe5e8;border-bottom:none;background:#fff;color:#555;border-radius:8px 8px 0 0;font-size:15px;cursor:pointer;margin-bottom:-1px}' +
     S + ' .olh-tabs button.on{color:#fff;font-weight:bold}' +
     S + ' .olh-main{flex:1;min-height:0;overflow:auto}' +
-    S + '.olh-min .olh-tabs,' + S + '.olh-min .olh-main{display:none}' +
-    S + '.olh-min{width:320px}' +
+    S + '.olh-min .olh-tabs,' + S + '.olh-min .olh-main,' + S + '.olh-min .olh-set{display:none!important}' +
+    S + '.olh-min{width:320px!important;height:auto!important;min-height:0;resize:none}' +
     /* 三個工具原本是各自浮在畫面上的視窗，放進分頁後改成普通區塊，並藏起它們自己的標題列 */
     S + ' #lt-panel-2026,' + S + ' #lg-panel-2026,' + S + ' #lm-panel-2026{position:static!important;width:auto!important;max-width:none!important;max-height:none!important;overflow:visible!important;border:none!important;border-radius:0!important;box-shadow:none!important;z-index:auto!important}' +
     S + ' .lt-head,' + S + ' .lg-head{display:none!important}';
@@ -82,8 +88,12 @@
     '<div class="olh-head" title="按住這裡可以拖動視窗">' +
     '<div class="olh-title"><b>官方LINE小幫手 <small class="olh-ver" title="版本日期 ' + VERSION_DATE + '">v' + VERSION + '</small>' +
     (window.__olhTest ? ' <small class="olh-ver" style="background:#d32f2f">測試版</small>' : '') + '</b><span>鼎盛文教事業（高群、金頭腦資優、空中美語）</span></div>' +
+    '<button class="olh-hbtn olh-set-btn" title="顯示設定：字的大小、視窗大小">⚙</button>' +
     '<button class="olh-hbtn olh-min-btn" title="縮小／放大">－</button>' +
     '<button class="olh-hbtn olh-close" title="關閉">×</button></div>' +
+    '<div class="olh-set"><b>縮放比例</b><button class="olh-sbtn olh-zdn" title="縮小">－</button><span class="olh-zv">100%</span>' +
+    '<button class="olh-sbtn olh-zup" title="放大">＋</button><button class="olh-sbtn olh-reset">恢復預設</button>' +
+    '<span class="olh-set-h">視窗大小：用滑鼠拖視窗<b>右下角</b>的斜線調整。設定會記在這台電腦，下次打開一樣。</span></div>' +
     '<div class="olh-acct"><span class="olh-acct-l">目前帳號</span><span class="olh-acct-n">讀取中…</span>' +
     '<span class="olh-acct-h">帳號不對？先到 LINE 後台左上角切換帳號，再按一次書籤。</span></div>' +
     '<div class="olh-tabs">' + TABS.map(function (t) { return '<button data-k="' + t.key + '">' + t.name + '</button>'; }).join('') + '</div>' +
@@ -146,6 +156,36 @@
   window.addEventListener('resize', function () {
     if (shell.style.left) { var r = shell.getBoundingClientRect(); place(r.left, r.top); }
   });
+
+  /* ========== 顯示設定：縮放比例、視窗大小（記在這台電腦） ========== */
+  var ZOOMS = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.5], ZOOM_KEY = 'olh-zoom', SIZE_KEY = 'olh-size';
+  var zoom = parseFloat(load(ZOOM_KEY)) || 1;
+  function applyZoom() {
+    /* 標題列不縮放，下面的內容才縮放，拖動位置才不會跑掉 */
+    ['.olh-acct', '.olh-tabs', '.olh-main'].forEach(function (s) { q(s).style.zoom = zoom; });
+    q('.olh-zv').textContent = Math.round(zoom * 100) + '%';
+    q('.olh-zdn').disabled = zoom <= ZOOMS[0]; q('.olh-zup').disabled = zoom >= ZOOMS[ZOOMS.length - 1];
+    save(ZOOM_KEY, String(zoom));
+  }
+  function stepZoom(d) {
+    var i = 0; ZOOMS.forEach(function (z, k) { if (Math.abs(z - zoom) < Math.abs(ZOOMS[i] - zoom)) i = k; });
+    zoom = ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, i + d))]; applyZoom();
+  }
+  q('.olh-zdn').onclick = function () { stepZoom(-1); };
+  q('.olh-zup').onclick = function () { stepZoom(1); };
+  q('.olh-set-btn').onclick = function () { shell.classList.toggle('olh-set-on'); };
+  q('.olh-reset').onclick = function () {
+    zoom = 1; applyZoom();
+    shell.style.width = ''; shell.style.height = '';
+    try { localStorage.removeItem(SIZE_KEY); } catch (e) { }
+  };
+  applyZoom();
+  var size = (load(SIZE_KEY) || '').split(',');
+  if (size.length === 2 && /px$/.test(size[0]) && /px$/.test(size[1])) { shell.style.width = size[0]; shell.style.height = size[1]; }
+  /* 拖右下角改大小時，瀏覽器會在視窗上寫 width/height；有寫才記起來 */
+  if (window.ResizeObserver) new ResizeObserver(function () {
+    if (!shell.classList.contains('olh-min') && shell.style.width && shell.style.height) save(SIZE_KEY, shell.style.width + ',' + shell.style.height);
+  }).observe(shell);
 
   /* ========== 縮小、關閉 ========== */
   q('.olh-min-btn').onclick = function () {
