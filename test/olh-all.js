@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.13', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.14', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1675,6 +1675,31 @@
     $('.lg-stop').onclick = function () { state.stop = true; this.disabled = true; this.textContent = '停止中…（這一則發完就停）'; };
   }
 
+
+  /* 發送前確認：在視窗裡輸入則數（不用瀏覽器的跳出視窗，有些瀏覽器會擋掉） */
+  function askCount(text, n) {
+    return new Promise(function (resolve) {
+      var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
+      var box = document.createElement('div');
+      box.className = 'lg-box lg-ask';
+      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
+      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
+        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
+        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+        '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      var inp = box.querySelector('.lg-ask-n');
+      function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
+      box.querySelector('.lg-ask-ok').onclick = function () {
+        if (String(inp.value).trim() === String(n)) done(true);
+        else { box.querySelector('.lg-ask-err').textContent = '數字不對，請輸入 ' + n + '（或按「取消」）。'; inp.focus(); }
+      };
+      box.querySelector('.lg-ask-no').onclick = function () { done(false); $('.lg-prog').textContent = '已取消，沒有發送任何訊息。'; };
+      inp.onkeydown = function (e) { if (e.key === 'Enter') box.querySelector('.lg-ask-ok').click(); };
+      box.scrollIntoView({ block: 'center' }); inp.focus();
+    });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
   async function doSend(resendJobs) {
     if (state.busy || !state.items) return;
@@ -1687,10 +1712,9 @@
     if (!jobs.length) { alert('沒有勾選任何要發送的 LINE。'); return; }
     var names = {}; jobs.forEach(function (j) { names[j.it.student] = 1; });
     var nStudents = Object.keys(names).length;
-    var ans = prompt('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
-      (jobs[0].it.photos && jobs[0].it.photos.length ? '每位：' + (jobs[0].it.text.trim() ? '文字＋' : '') + jobs[0].it.photos.length + ' 張照片\n' : '') + '送出後無法收回。\n\n請輸入數字 ' + jobs.length + ' 確認：');
-    if (ans === null) return;
-    if (String(ans).trim() !== String(jobs.length)) { alert('數字不對，已取消，沒有發送任何訊息。'); return; }
+    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
+      (jobs[0].it.photos && jobs[0].it.photos.length ? '每位：' + (jobs[0].it.text.trim() ? '文字＋' : '') + jobs[0].it.photos.length + ' 張照片\n' : '') + '送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+    if (!ans) return;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
@@ -2570,6 +2594,31 @@
     $('.lg-stop').onclick = function () { state.stop = true; this.disabled = true; this.textContent = '停止中…（這一則發完就停）'; };
   }
 
+
+  /* 發送前確認：在視窗裡輸入則數（不用瀏覽器的跳出視窗，有些瀏覽器會擋掉） */
+  function askCount(text, n) {
+    return new Promise(function (resolve) {
+      var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
+      var box = document.createElement('div');
+      box.className = 'lg-box lg-ask';
+      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
+      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
+        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
+        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+        '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      var inp = box.querySelector('.lg-ask-n');
+      function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
+      box.querySelector('.lg-ask-ok').onclick = function () {
+        if (String(inp.value).trim() === String(n)) done(true);
+        else { box.querySelector('.lg-ask-err').textContent = '數字不對，請輸入 ' + n + '（或按「取消」）。'; inp.focus(); }
+      };
+      box.querySelector('.lg-ask-no').onclick = function () { done(false); $('.lg-prog').textContent = '已取消，沒有發送任何訊息。'; };
+      inp.onkeydown = function (e) { if (e.key === 'Enter') box.querySelector('.lg-ask-ok').click(); };
+      box.scrollIntoView({ block: 'center' }); inp.focus();
+    });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
   async function doSend(resendJobs) {
     if (state.busy || !state.items) return;
@@ -2584,10 +2633,9 @@
     var nStudents = Object.keys(names).length;
     var nRt = 0, nTu = 0; Object.keys(names).length && jobs.forEach(function (j) { if (j.it.retest) names[j.it.student] |= 2; if (j.it.tutor) names[j.it.student] |= 4; });
     Object.keys(names).forEach(function (k) { if (names[k] & 2) nRt++; if (names[k] & 4) nTu++; });
-    var ans = prompt('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
-      '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請輸入數字 ' + jobs.length + ' 確認：');
-    if (ans === null) return;
-    if (String(ans).trim() !== String(jobs.length)) { alert('數字不對，已取消，沒有發送任何訊息。'); return; }
+    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
+      '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+    if (!ans) return;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
