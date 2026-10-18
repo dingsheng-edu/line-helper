@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.7', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.8', VERSION_DATE = '2026/10/18';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -550,6 +550,7 @@
     '<div class="lt-step"><h4>① LINE 名稱以 <input type="text" class="lt-prefix" placeholder="115"> 為開頭</h4>' +
     '<button class="lt-btn p-load">找出這些人</button>' +
     '<div class="lt-muted">會讀取全部聯絡人（幾千人約需 30 秒），只讀不改。</div>' +
+    '<div class="lt-prog p-prog1"></div><div class="lt-bar p-bar1"><i></i><span></span></div>' +
     '<div class="p-sum"></div></div>' +
     '<div class="lt-step p-s2" style="display:none"><h4>② 扣掉有這些標籤的人（自己勾）</h4>' +
     '<input type="text" class="p-filter" placeholder="輸入關鍵字篩選標籤">' +
@@ -625,9 +626,9 @@
     return true;
   }
   /* 進度條：有總數就顯示百分比；沒有總數（例如讀取全部聯絡人）就顯示來回跑的動畫 */
-  function setBar(el, i, n) {
+  function setBar(el, i, n, label) {
     el.style.display = 'block';
-    if (!n) { el.classList.add('ind'); el.querySelector('i').style.width = ''; el.querySelector('span').textContent = ''; return; }
+    if (!n) { el.classList.add('ind'); el.querySelector('i').style.width = ''; el.querySelector('span').textContent = label || ''; return; }
     var p = Math.min(100, Math.round(i / n * 100));
     el.classList.remove('ind'); el.querySelector('i').style.width = p + '%';
     el.querySelector('span').textContent = p + '%（' + i + ' / ' + n + '）';
@@ -892,8 +893,18 @@
     var prefix = q2('.lt-prefix').value.trim();
     if (!prefix) { alert('請先輸入名稱開頭，例如 115。'); return; }
     busy2(true); resetPreview(); st2.exclude = {}; st2.cPick = {}; st2.uncheck = {};
+    /* 進度條：總人數用這台電腦上次讀到的人數估計（第一次不知道總數，就顯示跑動的動畫＋已讀人數） */
+    var TOTAL_KEY = 'lt-contacts-total-' + botId, total = 0;
+    try { total = parseInt(localStorage.getItem(TOTAL_KEY), 10) || 0; } catch (e) { }
+    var bar1 = q2('.p-bar1');
+    q2('.p-prog1').textContent = '讀取聯絡人中…'; setBar(bar1, 0, total, '已讀 0 人');
     try {
-      st2.all = await allContacts(function (n) { prog2('讀取聯絡人中… ' + n + ' 人'); });
+      st2.all = await allContacts(function (n) {
+        q2('.p-prog1').textContent = '讀取聯絡人中… ' + n + ' 人' + (total ? '（上次共 ' + total + ' 人）' : '');
+        if (total && n <= total) setBar(bar1, n, total); else setBar(bar1, 0, 0, '已讀 ' + n + ' 人');
+      });
+      try { localStorage.setItem(TOTAL_KEY, String(st2.all.length)); } catch (e) { }
+      setBar(bar1, 1, 1); q2('.p-prog1').textContent = '讀取完成：共 ' + st2.all.length + ' 人。';
       st2.prefix = prefix;
       st2.groups = classifyByPrefix(st2.all, prefix);
       var g = st2.groups;
@@ -904,7 +915,8 @@
       renderExclude();
       ['.p-s2', '.p-s3', '.p-s4'].forEach(function (s) { q2(s).style.display = ''; });
       prog2('讀取完成。請勾選要扣掉的標籤、輸入新標籤，再按「預覽名單」。');
-    } catch (e) { alert('讀取失敗：' + e.message); prog2(''); }
+    } catch (e) { alert('讀取失敗：' + e.message); prog2(''); q2('.p-prog1').textContent = ''; }
+    hideBar(bar1);
     busy2(false);
   };
 
