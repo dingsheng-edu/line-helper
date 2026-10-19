@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.21', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.22', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -236,7 +236,7 @@
      待補發：沒發出去的訊息內容（含照片）只存在這台電腦的瀏覽器（IndexedDB），關掉分頁、換帳號、重開電腦都還在。 */
   var LOG_KEY = 'olh-log', PC_KEY = 'olh-pc', SHEET_KEY = 'olh-sheet', HOUR_KEY = 'olh-hour-' + botId;
   /* Google 試算表接收網址（總表同步_設定教學.txt 的 A-5）；建好試算表後填在這裡，所有電腦就會在背景自動同步 */
-  var SHEET_URL = '';
+  var SHEET_URL = 'https://script.google.com/macros/s/AKfycbzrYiZFGw4ptwJOoc0rHM9WB4j-zYmkzg8hHuM3ceQsw_jqdEmAulMZhZz31Qo3jbHK/exec';
   var botName = '';
   function jget(k, d) { try { return JSON.parse(load(k)) || d; } catch (e) { return d; } }
   function jset(k, v) { save(k, JSON.stringify(v)); }
