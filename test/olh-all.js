@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.22', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.23', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -308,8 +308,70 @@
     removePending: function (id) { return idbDo('readwrite', function (st) { return st['delete'](id); }).then(refreshPending); },
     listPending: function () { return idbDo('readonly', function (st) { return st.getAll(); }).then(function (r) { return r || []; }); },
     resumers: {},
-    showTab: function (k) { showTab(k); }
+    showTab: function (k) { showTab(k); },
+    card: drawCard,
+    cardBlob: function (spec) { var cv = drawCard(spec); return new Promise(function (r) { cv.toBlob(r, 'image/png'); }); }
   };
+
+  /* ========== 圖卡（像 LINE 卡片的圖片；聊天室不能發 Flex，所以畫成圖片發） ==========
+     spec = { title, sub, big, bigColor, chips: [文字…], lines: [文字…], alert: { title, text }, footer } */
+  function drawCard(spec) {
+    var W = 1080, P = 56, F = '"Microsoft JhengHei","PingFang TC","Segoe UI Emoji",sans-serif';
+    var cv = document.createElement('canvas'), g = cv.getContext('2d');
+    function wrap(text, font, maxW) {
+      g.font = font; var out = [];
+      String(text || '').split('\n').forEach(function (para) {
+        var line = '';
+        Array.from(para).forEach(function (ch) {
+          if (g.measureText(line + ch).width > maxW && line) { out.push(line); line = ch; } else line += ch;
+        });
+        out.push(line);
+      });
+      return out;
+    }
+    var TF = 'bold 50px ' + F, SF = '32px ' + F, BF = 'bold 120px ' + F, CF = 'bold 32px ' + F, LF = '36px ' + F, LBF = 'bold 36px ' + F, AF = '34px ' + F, FF = '26px ' + F;
+    var titleL = wrap(spec.title, TF, W - P * 2), subL = spec.sub ? wrap(spec.sub, SF, W - P * 2) : [];
+    var headH = 50 + titleL.length * 64 + subL.length * 44 + 30;
+    var body = [];   /* [高度, 畫法] */
+    if (spec.big) body.push([150, function (y) { g.fillStyle = spec.bigColor || '#1565c0'; g.font = BF; g.fillText(spec.big, P, y + 120); }]);
+    if (spec.chips && spec.chips.length) body.push([80, function (y) {
+      var x = P; g.font = CF;
+      spec.chips.forEach(function (c) {
+        var w = g.measureText(c).width + 44;
+        g.fillStyle = '#e8eef6'; g.beginPath(); g.roundRect(x, y + 8, w, 58, 29); g.fill();
+        g.fillStyle = '#1e3a5f'; g.fillText(c, x + 22, y + 48); x += w + 16;
+      });
+    }]);
+    (spec.lines || []).forEach(function (ln) {
+      var head = /[：:]\s*$/.test(ln) || /^[✅📌🗓📚🔄❌⏰🎒🚫]/.test(ln);
+      var num = /^\s*\d+[.、]/.test(ln);
+      var lines = wrap(ln, head ? LBF : LF, W - P * 2 - (num ? 40 : 0));
+      body.push([lines.length * 54 + 14, function (y) {
+        g.fillStyle = head ? '#1e3a5f' : '#333'; g.font = head ? LBF : LF;
+        lines.forEach(function (t, i) { g.fillText(t, P + (num ? 40 : 0), y + 44 + i * 54); });
+      }]);
+    });
+    if (spec.alert) {
+      var aL = wrap(spec.alert.text, AF, W - P * 2 - 60);
+      body.push([110 + aL.length * 50, function (y) {
+        var h = 90 + aL.length * 50;
+        g.fillStyle = '#ffebee'; g.beginPath(); g.roundRect(P, y + 10, W - P * 2, h, 18); g.fill();
+        g.fillStyle = '#e53935'; g.fillRect(P, y + 10, 10, h);
+        g.fillStyle = '#c62828'; g.font = 'bold 36px ' + F; g.fillText('🔴 ' + spec.alert.title, P + 34, y + 62);
+        g.fillStyle = '#333'; g.font = AF; aL.forEach(function (t, i) { g.fillText(t, P + 34, y + 112 + i * 50); });
+      }]);
+    }
+    var bodyH = body.reduce(function (a, b) { return a + b[0]; }, 0) + 50, footH = spec.footer ? 80 : 30;
+    cv.width = W; cv.height = headH + bodyH + footH;
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, cv.height);
+    g.fillStyle = '#1e3a5f'; g.fillRect(0, 0, W, headH);
+    g.fillStyle = '#ffffff'; g.font = TF; titleL.forEach(function (t, i) { g.fillText(t, P, 50 + 50 + i * 64); });
+    g.fillStyle = 'rgba(255,255,255,.85)'; g.font = SF; subL.forEach(function (t, i) { g.fillText(t, P, 50 + titleL.length * 64 + 40 + i * 44); });
+    var y = headH + 20;
+    body.forEach(function (b) { b[1](y); y += b[0]; });
+    if (spec.footer) { g.fillStyle = '#eef1f4'; g.fillRect(0, cv.height - 80, W, 80); g.fillStyle = '#777'; g.font = FF; g.fillText(spec.footer, P, cv.height - 30); }
+    return cv;
+  }
 
   /* 最上面的紅色橫幅：上次沒發出去的訊息，一鍵繼續發 */
   function refreshPending() {
@@ -1578,6 +1640,7 @@
     '<div class="lg-chips"></div>' +
     '<textarea class="lg-tpl" style="height:130px"></textarea>' +
     '<div class="lg-fill"></div>' +
+    '<label style="display:block;margin-top:8px;cursor:pointer"><input type="checkbox" class="lg-usecard" checked> 📇 同時附上<b>通知圖卡</b>（每位家長：文字＋一張圖卡，第一行當標題）</label>' +
     '<div class="lg-livepv" style="display:none;margin-top:8px"></div>' +
     '<div class="lg-photobar" style="margin-top:8px;padding:8px 10px;border:1px dashed #ce93d8;border-radius:8px;background:#fcf7fd">' +
     '📷 <b>附加照片</b>（可以不加）：<input type="file" class="lg-photo" accept="image/jpeg,image/png" multiple>' +
@@ -1638,6 +1701,13 @@
 
   /* 訊息預覽：用「吳政興」當範例，邊打字邊顯示家長會收到的樣子（還沒填的空格保留 [方括號]） */
   var SAMPLE_NAME = '吳政興';
+  function useCardOn() { var c = panel.querySelector('.lg-usecard'); return !!(c && c.checked && window.OLH && window.OLH.card); }
+  /* 通知圖卡：訊息第一行當標題，其他行照順序列出 */
+  function msgCard(text) {
+    var ls = String(text || '').split('\n').filter(function (l) { return l.trim(); });
+    return { title: ls[0] || '', lines: ls.slice(1), footer: (window.OLH && window.OLH.botName()) || '' };
+  }
+  function cardImg(text, w) { try { return '<img src="' + window.OLH.card(msgCard(text)).toDataURL('image/png') + '" style="width:' + w + 'px;border-radius:8px;border:1px solid #ddd;margin-top:6px;display:block">'; } catch (e) { return ''; } }
   function renderLivePreview() {
     var box = $('.lg-livepv'); if (!box) return;
     var tpl = $('.lg-tpl').value, each = mode() === 'each';
@@ -1653,7 +1723,8 @@
     var nPh = !each && state.photos ? state.photos.length : 0;
     box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + '）</div>' +
       '<div class="lg-msg" style="max-width:360px">' + (txt.trim() ? esc(txt) : '<span class="lg-muted">（沒有文字，只發照片）</span>') +
-      (nPh ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + state.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>';
+      (nPh ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + state.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>' +
+      (useCardOn() && txt.trim() ? '<div class="lg-muted" style="margin-top:6px">📇 圖卡（範例）：</div>' + cardImg(txt, 260) : '');
     box.style.display = 'block';
   }
   panel.addEventListener('input', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
@@ -1784,6 +1855,7 @@
     var usePhotos = mode() === 'same' ? state.photos.slice() : [];
     if (!tpl && !usePhotos.length) { alert('請先寫要發的訊息，或附加照片。'); $('.lg-tpl').focus(); return; }
     state.porder = panel.querySelector('input[name=lm-porder]:checked').value;
+    state.useCard = useCardOn();
     if (mode() === 'each' && !state.table.msgHeader && /\[訊息\]/.test(tpl)) { alert('Excel 裡找不到「訊息」欄。請在 Excel 加一欄標題叫「訊息」，或改用「統一訊息」。'); return; }
     /* 填空欄：全部填好才可以預覽；填的內容當成每個人都一樣的欄位 */
     var keys = fillKeys(), vals = {}, empty = [];
@@ -1829,7 +1901,8 @@
           (c.note ? ' <span class="lg-warn">（' + esc(c.note) + '）</span>' : '') + '</label>';
       });
       if (!it.block) h += '<div class="lg-msg">' + (it.text.trim() ? esc(it.text) : '<span class="lg-muted">（沒有文字，只發照片）</span>') +
-        (it.photos && it.photos.length ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + it.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>';
+        (it.photos && it.photos.length ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + it.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>' +
+        (state.useCard && it.text.trim() && ii < 40 ? cardImg(it.text, 220) : '');
       h += '</td></tr>';
     });
     h += '</table>';
@@ -1915,7 +1988,7 @@
     var jobs = remainingJobs();
     if (!OLHX || !state.task) return Promise.resolve(0);
     if (!jobs.length) { if (state.pendingId) OLHX.removePending(state.pendingId); state.pendingId = null; return Promise.resolve(0); }
-    var p = { id: state.pendingId || state.task.id, tool: 'msg', task: state.task, reason: reason || '', porder: state.porder || '',
+    var p = { id: state.pendingId || state.task.id, tool: 'msg', task: state.task, reason: reason || '', porder: state.porder || '', useCard: !!state.useCard,
       jobs: jobs.map(function (j) {
         return { student: j.it.student, row: j.it.row, score: j.it.score, text: j.it.text, key: j.it.key || '', photos: j.it.photos || [],
           retest: !!j.it.retest, contactId: j.c.contactId, nick: j.c.nick, unsure: j.c.resend === 'unsure',
@@ -1935,7 +2008,7 @@
         parts: j.parts ? j.parts.map(function (x) { return { kind: x.kind, i: x.i, ok: x.ok, seen: x.ok }; }) : null };
       it.contacts.push(c); jobs.push({ it: it, c: c });
     });
-    state.items = items; state.task = p.task; state.task.closed = false; state.pendingId = p.id; if (p.porder) state.porder = p.porder;
+    state.items = items; state.task = p.task; state.task.closed = false; state.pendingId = p.id; if (p.porder) state.porder = p.porder; state.useCard = !!p.useCard;
     $('.lg-task').value = p.task.name;
     panel.querySelectorAll('.lg-locked').forEach(function (s) { s.classList.remove('lg-locked'); });
     $('.lg-out').innerHTML = '<div class="lg-box" style="border:2px solid #c62828;background:#fff5f5"><b>繼續上次的工作：「' + esc(p.task.name) + '」</b>（' + esc(p.task.date + ' ' + p.task.time) + '）<br>還有 <b>' + jobs.length + '</b> 則沒發出去。按下面的確認就會接著發。</div>';
@@ -2152,12 +2225,17 @@
   function buildParts(it) {
     var parts = [];
     if (it.text.trim()) parts.push({ kind: 'text' });
+    if (state.useCard && it.text.trim()) parts.push({ kind: 'card' });
     (it.photos || []).forEach(function (f, k) { parts.push({ kind: 'photo', i: k }); });
     if (state.porder === 'photo') parts.sort(function (a, b) { return (a.kind === 'text') - (b.kind === 'text'); });
     return parts;
   }
-  function partName(p) { return p.kind === 'text' ? '文字' : '照片 ' + (p.i + 1); }
-  function sendPart(chatId, it, p) { return p.kind === 'text' ? sendText(chatId, it.text, p.sendId) : sendFile(chatId, it.photos[p.i], p.sendId); }
+  function partName(p) { return p.kind === 'text' ? '文字' : p.kind === 'card' ? '圖卡' : '照片 ' + (p.i + 1); }
+  function sendPart(chatId, it, p) {
+    if (p.kind === 'text') return sendText(chatId, it.text, p.sendId);
+    if (p.kind === 'card') return window.OLH.cardBlob(msgCard(it.text)).then(function (b) { return sendFile(chatId, new File([b], '通知.png', { type: 'image/png' }), p.sendId); });
+    return sendFile(chatId, it.photos[p.i], p.sendId);
+  }
 
   function renderSendResult() {
     var items = state.items, ok = 0, verified = 0, fail = [], stopped = 0, skipped = [], notFound = [], unchecked = [], lines = ['學生\t發給\t結果'];
@@ -2278,6 +2356,30 @@
     });
     return r.status;
   }
+
+  /* 發一張圖片（成績圖卡）。回傳 HTTP 狀態碼 */
+  async function sendFile(chatId, file, sendId) {
+    var c = await getCsrf(), headers = { 'Accept': 'application/json' };
+    headers[c.headerName] = c.token;
+    var fd = new FormData(); fd.append('file', file, file.name); fd.append('sendId', sendId);
+    return (await fetch('/api/v1/bots/' + botId + '/chats/' + chatId + '/messages/sendFile', { method: 'POST', headers: headers, credentials: 'same-origin', body: fd })).status;
+  }
+  async function recentSent(chatId) {
+    try { var j = await api('/api/v3/bots/' + botId + '/chats/' + chatId + '/messages?limit=50'); return (j.list || []).filter(function (x) { return x.type === 'messageSent'; }); }
+    catch (e) { return null; }
+  }
+  /* 成績圖卡的內容（官方LINE小幫手的圖卡產生器畫成圖片） */
+  function gradeCard(rec, name, score) {
+    var d = new Date(), wk = '日一二三四五六'.charAt(d.getDay());
+    var chips = [];
+    if (rec['名次']) chips.push('第 ' + rec['名次'] + ' 名' + (rec['應考人數'] ? '／' + rec['應考人數'] + ' 人' : ''));
+    if (rec['平均']) chips.push('班平均 ' + rec['平均']);
+    return { title: ((rec['班別'] || '') + ' 小考成績').trim(), sub: name + '｜' + (d.getMonth() + 1) + '/' + d.getDate() + '(' + wk + ')',
+      big: score !== '' && score != null ? score + ' 分' : '缺考', bigColor: score !== '' && score != null ? '#1565c0' : '#9e9e9e',
+      chips: chips, alert: rec.__retest ? { title: '需補考／輔導', text: rec.__retest.replace(/!/g, '！') } : null,
+      footer: (window.OLH && window.OLH.botName()) || '' };
+  }
+  function cardImg(spec, w) { try { return '<img src="' + window.OLH.card(spec).toDataURL('image/png') + '" style="width:' + w + 'px;border-radius:8px;border:1px solid #ddd;margin-top:6px;display:block">'; } catch (e) { return ''; } }
 
   /* 送達確認：讀聊天室最新 50 則（只讀，不會變已讀），找這次發的那一則（用發送編號 sendId，或同樣文字＋時間）。
      回傳 true＝找到、false＝找不到、null＝讀不到 */
@@ -2468,7 +2570,7 @@
       if (rec.__retest) msg.text += '\n' + rec.__retest;
       if (rec.__tutor) msg.text += '\n' + rec.__tutor;
       msg.text = msg.text.replace(/!/g, '！');   /* 驚嘆號一律全形 */
-      var item = { student: n, row: rec.__row, score: table.scoreKey ? (rec[table.scoreKey] || '') : null, text: msg.text, missing: msg.missing, unknown: msg.unknown, contacts: [], warn: [], block: '', retest: !!rec.__retest, tutor: !!rec.__tutor };
+      var item = { student: n, row: rec.__row, score: table.scoreKey ? (rec[table.scoreKey] || '') : null, text: msg.text, missing: msg.missing, unknown: msg.unknown, contacts: [], warn: [], block: '', retest: !!rec.__retest, tutor: !!rec.__tutor, card: table.useCard ? gradeCard(rec, n, table.scoreKey ? (rec[table.scoreKey] || '') : null) : null };
       var list;
       try { list = await searchContacts(n); } catch (e) { item.block = '搜尋失敗：' + e.message; out.push(item); continue; }
       var mine = list.filter(function (c) { return displayName(c).indexOf(n) >= 0 && !c.spam; });
@@ -2607,6 +2709,7 @@
     '<textarea class="lg-tpl" style="height:110px"></textarea>' +
     '<div class="lg-livepv" style="margin-top:8px"></div></div>' +
     '<div class="lg-step lg-s4 lg-locked"><h4>④ 預覽</h4>' +
+    '<label style="display:block;margin-bottom:6px;cursor:pointer"><input type="checkbox" class="lg-usecard" checked> 📇 同時附上<b>成績圖卡</b>（每位家長：文字＋一張圖卡）</label>' +
     '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：高一數學小考成績" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
@@ -2620,6 +2723,8 @@
 
   var $ = function (s) { return panel.querySelector(s); };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+
+  function useCardOn() { var c = panel.querySelector('.lg-usecard'); return !!(c && c.checked && window.OLH && window.OLH.card); }
 
   /* 訊息預覽：用「吳政興」當範例（分數等用 Excel 第一位的；還沒放 Excel 就用範例數字），邊改邊顯示家長會收到的樣子 */
   var SAMPLE_NAME = '吳政興';
@@ -2641,7 +2746,8 @@
     }
     box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + (t && t.records.length ? '，分數等用 Excel 第一位的' : '，分數等是範例數字') + '）</div>' +
       '<div class="lg-msg" style="max-width:380px">' + esc((txt + extra).replace(/!/g, '！')) + '</div>' +
-      (extra ? '<div class="lg-muted">最後一句只有「需要補考／輔導」的學生才會有。</div>' : '');
+      (extra ? '<div class="lg-muted">最後一句只有「需要補考／輔導」的學生才會有。</div>' : '') +
+      (useCardOn() ? '<div class="lg-muted" style="margin-top:6px">📇 圖卡（範例）：</div>' + cardImg(gradeCard((function () { var r2 = {}; for (var kk in rec) r2[kk] = rec[kk]; r2.__retest = extra ? extra.trim() : ''; return r2; })(), SAMPLE_NAME, rec['分數']), 260) : '');
   }
   setTimeout(function () {
     panel.addEventListener('input', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
@@ -2845,7 +2951,7 @@
         sorted.sort(function (a, b) { return sc(b) - sc(a); });
       }
       if (!$('.lg-task').value.trim()) $('.lg-task').value = (cls || (t.examName || '').replace(/^\d{3,4}\s*/, '') || '') + (/(小考|考試|成績)$/.test(cls || '') ? '' : '小考成績');
-      state.items = await preview({ headers: t.headers, nameHeader: t.nameHeader, records: sorted, scoreKey: sk }, tpl, prog); renderPreview();
+      state.items = await preview({ headers: t.headers, nameHeader: t.nameHeader, records: sorted, scoreKey: sk, useCard: useCardOn() }, tpl, prog); renderPreview();
       $('.lg-prog').textContent = SEND_ENABLED ? '預覽完成。請逐一確認內容與勾選，沒問題再按「開始發送」。' : '預覽完成。';
       if (SEND_ENABLED) $('.lg-send').disabled = false;
     } catch (e) { alert('預覽失敗：' + e.message); }
@@ -2887,7 +2993,7 @@
         h += '<label class="lg-c"><input type="checkbox" data-i="' + ii + '" data-c="' + ci + '"' + (c.checked ? ' checked' : '') + '> ' + esc(c.nick) +
           (c.note ? ' <span class="lg-warn">（' + esc(c.note) + '）</span>' : '') + '</label>';
       });
-      if (!it.block) h += '<div class="lg-msg">' + esc(it.text) + '</div>';
+      if (!it.block) h += '<div class="lg-msg">' + esc(it.text) + '</div>' + (it.card && ii < 40 ? cardImg(it.card, 220) : '');
       h += '</td></tr>';
     });
     h += '</table>';
@@ -2977,7 +3083,7 @@
     var p = { id: state.pendingId || state.task.id, tool: 'grade', task: state.task, reason: reason || '', porder: state.porder || '',
       jobs: jobs.map(function (j) {
         return { student: j.it.student, row: j.it.row, score: j.it.score, text: j.it.text, key: j.it.key || '', photos: j.it.photos || [],
-          retest: !!j.it.retest, contactId: j.c.contactId, nick: j.c.nick, unsure: j.c.resend === 'unsure',
+          retest: !!j.it.retest, card: j.it.card || null, textSeen: !!j.c.textSeen, contactId: j.c.contactId, nick: j.c.nick, unsure: j.c.resend === 'unsure',
           parts: j.c.parts ? j.c.parts.map(function (x) { return { kind: x.kind, i: x.i, ok: !!(x.ok && x.seen) }; }) : null };
       }) };
     state.pendingId = p.id;
@@ -2989,8 +3095,8 @@
     var byKey = {}, items = [], jobs = [];
     p.jobs.forEach(function (j) {
       var k = j.student + '|' + j.text + '|' + j.key, it = byKey[k];
-      if (!it) { it = byKey[k] = { student: j.student, row: j.row, score: j.score, text: j.text, key: j.key, photos: j.photos, retest: j.retest, contacts: [], warn: [], unknown: [], missing: [], block: '' }; items.push(it); }
-      var c = { contactId: j.contactId, nick: j.nick, checked: true, note: j.unsure ? '上次不確定有沒有送出' : '', result: '', resend: '',
+      if (!it) { it = byKey[k] = { student: j.student, row: j.row, score: j.score, text: j.text, key: j.key, photos: j.photos, retest: j.retest, card: j.card || null, contacts: [], warn: [], unknown: [], missing: [], block: '' }; items.push(it); }
+      var c = { contactId: j.contactId, nick: j.nick, checked: true, textSeen: !!j.textSeen, note: j.unsure ? '上次不確定有沒有送出' : '', result: '', resend: '',
         parts: j.parts ? j.parts.map(function (x) { return { kind: x.kind, i: x.i, ok: x.ok, seen: x.ok }; }) : null };
       it.contacts.push(c); jobs.push({ it: it, c: c });
     });
@@ -3110,8 +3216,8 @@
         var nowNick = byStudent[it.student][c.contactId];
         if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒發）'; continue; }
         if (alreadySent(c.contactId, it.text)) { c.result = '略過：24 小時內已發過一樣的內容'; continue; }
-        c.sendId = newSendId(); c.sentAt = Date.now();
-        var st = await sendText(c.contactId, it.text, c.sendId), tries = 0;
+        var st = 200, tries = 0;
+        if (!c.textSeen) { c.sendId = newSendId(); c.sentAt = Date.now(); st = await sendText(c.contactId, it.text, c.sendId); }
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
@@ -3120,8 +3226,17 @@
           c.sendId = newSendId(); c.sentAt = Date.now();
           st = await sendText(c.contactId, it.text, c.sendId);
         }
+        if (st >= 200 && st < 300) c.textSent = true;
+        if (st >= 200 && st < 300 && it.card && !c.cardSeen) {
+          await sleep(800);
+          c.cardSendId = newSendId(); c.cardAt = Date.now();
+          var blob = await window.OLH.cardBlob(it.card);
+          var st2 = await sendFile(c.contactId, new File([blob], '成績_' + it.student + '.png', { type: 'image/png' }), c.cardSendId);
+          if (st2 === 429) { c.cardSendId = null; st = 429; state.limit = true; }
+          else if (st2 < 200 || st2 >= 300) { st = st2; }
+        }
         if (st >= 200 && st < 300) { c.result = '成功'; markSent(c.contactId, it.text); done++; if (OLHX) OLHX.noteSent(c.contactId); }
-        else if (st === 429) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; c.sendId = null; state.limit = true; }
+        else if (st === 429) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; if (c.textSent) c.textSeen = true; c.sendId = null; state.limit = true; }
         else { c.result = '失敗（代碼 ' + st + '），請到聊天室確認有沒有送出'; c.resend = 'unsure'; }
       } catch (e) {
         c.result = '失敗（連線錯誤），請到聊天室確認有沒有送出'; c.resend = 'unsure';
@@ -3149,7 +3264,7 @@
      - 「成功」的：找到＝✔ 已確認；找不到（等 2、5、15 秒各查一次都沒有）＝改成失敗，可以重發
      - 「不確定」的（連線錯誤等）：找到＝改成成功；找不到＝確定沒送出，可以重發 */
   async function verifySent(jobs) {
-    var todo = jobs.filter(function (j) { return j.c.sendId && (j.c.result === '成功' || j.c.resend === 'unsure'); });
+    var todo = jobs.filter(function (j) { return (j.c.sendId || j.c.cardSendId) && (j.c.result === '成功' || j.c.resend === 'unsure'); });
     var waits = [2000, 5000, 15000];
     for (var round = 0; round < waits.length && todo.length; round++) {
       state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), 0, todo.length, '等 ' + (waits[round] / 1000) + ' 秒後到聊天室檢查…');
@@ -3158,7 +3273,13 @@
       for (var i = 0; i < todo.length; i++) {
         var j = todo[i], c = j.c;
         state.sbar('送達確認' + (round ? '（第 ' + (round + 1) + ' 次）' : ''), i + 1, todo.length, j.it.student + ' → ' + c.nick);
-        var found = await inChat(c.contactId, c.sendId, j.it.text, c.sentAt);
+        var list = await recentSent(c.contactId), found;
+        if (list === null) found = null;
+        else {
+          if (c.sendId && !c.textSeen) c.textSeen = list.some(function (x) { return x.sendId === c.sendId || (x.message && x.message.text === j.it.text && x.timestamp >= c.sentAt - 120000); });
+          if (j.it.card && c.cardSendId && !c.cardSeen) c.cardSeen = list.some(function (x) { return x.sendId === c.cardSendId || (x.message && x.message.type !== 'text' && x.timestamp >= c.cardAt - 5000); });
+          found = !!c.textSeen && (!j.it.card || !!c.cardSeen);
+        }
         if (found === null) c.verify = 'error';
         else if (found) {
           c.verify = 'ok';
@@ -3169,7 +3290,9 @@
       todo = left;
     }
     todo.forEach(function (j) {
-      j.c.verify = 'missing'; j.c.result = '失敗：聊天室裡找不到這則訊息（沒送出），可以按下面「重發」'; j.c.resend = 'safe';
+      j.c.verify = 'missing'; j.c.resend = 'safe';
+      j.c.result = j.c.textSeen ? '失敗：成績圖卡沒送到（文字已送到，重發只會補圖卡），可以按下面「重發」' : '失敗：聊天室裡找不到這則訊息（沒送出），可以按下面「重發」';
+      if (!j.c.cardSeen) j.c.cardSendId = null;
       unmarkSent(j.c.contactId, j.it.text);
     });
   }
