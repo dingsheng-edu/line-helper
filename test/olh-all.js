@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.24', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.25', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -108,6 +108,7 @@
     '<div class="olh-set"><b>縮放比例</b><button class="olh-sbtn olh-zdn" title="縮小">－</button><span class="olh-zv">100%</span>' +
     '<button class="olh-sbtn olh-zup" title="放大">＋</button><button class="olh-sbtn olh-reset">恢復預設</button>' +
     '<button class="olh-sbtn olh-logbtn">📋 發送紀錄總表</button>' +
+    '<button class="olh-sbtn olh-schbtn">📅 預約清單</button>' +
     '<span class="olh-set-h">視窗大小：拖視窗<b>右下角</b>的斜線調整。設定會記在這台電腦。</span></div>' +
     '<div class="olh-logview" style="display:none"></div>' +
     '<div class="olh-pend" style="display:none"></div>' +
@@ -234,7 +235,13 @@
   /* ========== 發送紀錄總表、待補發（三個工具共用：window.OLH） ==========
      總表：每個任務一列（只有則數，不存家長或學生資料），存在這台電腦；有設定「總表同步網址」就同步到 Google 試算表。
      待補發：沒發出去的訊息內容（含照片）只存在這台電腦的瀏覽器（IndexedDB），關掉分頁、換帳號、重開電腦都還在。 */
-  var LOG_KEY = 'olh-log', PC_KEY = 'olh-pc', SHEET_KEY = 'olh-sheet', HOUR_KEY = 'olh-hour-' + botId;
+  var LOG_KEY = 'olh-log', PC_KEY = 'olh-pc', SHEET_KEY = 'olh-sheet', HOUR_KEY = 'olh-hour-' + botId, SCHED_KEY = 'olh-sched-' + botId;
+  var TEST_BUILD = !!window.__olhTest;
+  var csrfCache = null;
+  function csrfH() {
+    return (csrfCache ? Promise.resolve(csrfCache) : fetch('/api/v1/csrfToken', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (c) { csrfCache = c; return c; }))
+      .then(function (c) { var h = { 'Content-Type': 'application/json', 'Accept': 'application/json' }; h[c.headerName] = c.token; return h; });
+  }
   /* Google 試算表接收網址（總表同步_設定教學.txt 的 A-5）；建好試算表後填在這裡，所有電腦就會在背景自動同步 */
   var SHEET_URL = 'https://script.google.com/macros/s/AKfycbzrYiZFGw4ptwJOoc0rHM9WB4j-zYmkzg8hHuM3ceQsw_jqdEmAulMZhZz31Qo3jbHK/exec';
   var botName = '';
@@ -289,7 +296,7 @@
       for (i = 0; i < log.length && log[i].id !== t.id; i++);
       log[i] = JSON.parse(JSON.stringify(t));
       jset(LOG_KEY, log.slice(-500)); OLH.sync();
-      if (q('.olh-logview').style.display !== 'none') renderLog();
+      if (q('.olh-logview').style.display !== 'none' && q('.olh-logview').getAttribute('data-k') !== 'sch') renderLog();
     },
     log: function () { return jget(LOG_KEY, []); },
     /* 背景同步到 Google 試算表（網址寫在程式最上面的 SHEET_URL；還沒設定就只存在這台電腦），畫面上不顯示 */
@@ -309,8 +316,33 @@
     listPending: function () { return idbDo('readonly', function (st) { return st.getAll(); }).then(function (r) { return r || []; }); },
     resumers: {},
     showTab: function (k) { showTab(k); },
-    card: drawCard,
-    cardBlob: function (spec) { var cv = drawCard(spec); return new Promise(function (r) { cv.toBlob(r, 'image/png'); }); }
+    /* 圖卡、五標：目前只在測試版打開（管理者 2026/10/19 說正式版先不要） */
+    features: { cards: TEST_BUILD, five: TEST_BUILD },
+    card: TEST_BUILD ? drawCard : null,
+    cardBlob: function (spec) { var cv = drawCard(spec); return new Promise(function (r) { cv.toBlob(r, 'image/png'); }); },
+
+    /* ===== 預約發送（用 LINE 後台本身的「預約訊息」：LINE 伺服器準時送出，電腦關著也會送） =====
+       限制：只能文字；時間要對齊 10 分鐘；最多 120 天後；每個聊天室同時只能有 1 則預約。 */
+    SCHED_STEP: 600000, SCHED_MAX_DAYS: 120,
+    schedList: function (chatId) {
+      return fetch('/api/v1/bots/' + botId + '/chats/' + chatId + '/messages/scheduled', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+        .then(function (r) { if (!r.ok) throw new Error('讀取預約失敗 ' + r.status); return r.json(); }).then(function (j) { return j.list || []; });
+    },
+    schedCreate: function (chatId, text, at) {
+      return csrfH().then(function (h) {
+        return fetch('/api/v1/bots/' + botId + '/chats/' + chatId + '/messages/scheduled', { method: 'POST', credentials: 'same-origin', headers: h,
+          body: JSON.stringify({ message: { type: 'textV2', text: String(text).replace(/\{/g, '{{').replace(/\}/g, '}}') }, scheduledAt: at }) });
+      }).then(function (r) { return r.text().then(function (t) { var j = {}; try { j = JSON.parse(t); } catch (e) { } return { status: r.status, id: j.scheduledMessageId || '', code: j.code || '' }; }); });
+    },
+    schedDelete: function (chatId, id) {
+      return csrfH().then(function (h) {
+        return fetch('/api/v1/bots/' + botId + '/chats/' + chatId + '/messages/scheduled/' + id, { method: 'DELETE', credentials: 'same-origin', headers: h });
+      }).then(function (r) { return r.status; });
+    },
+    /* 這台電腦建立的預約批次（存在這台電腦，📅 預約清單 看得到、可以整批取消） */
+    schedSave: function (batch) { var l = jget(SCHED_KEY, []).filter(function (b) { return b.id !== batch.id; }); l.push(batch); jset(SCHED_KEY, l.slice(-200)); },
+    schedBatches: function () { return jget(SCHED_KEY, []); },
+    fmtAt: function (at) { var d = new Date(at); return (d.getMonth() + 1) + '/' + d.getDate() + '(' + '日一二三四五六'.charAt(d.getDay()) + ') ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
   };
 
   /* ========== 圖卡（像 LINE 卡片的圖片；聊天室不能發 Flex，所以畫成圖片發） ==========
@@ -437,7 +469,47 @@
       a.download = '發送紀錄總表_' + (OLH.pc() || '這台電腦') + '.csv'; a.click();
     };
   }
-  q('.olh-logbtn').onclick = function () { var v = q('.olh-logview'); v.style.display = v.style.display === 'none' ? 'block' : 'none'; if (v.style.display === 'block') renderLog(); };
+  /* 📅 預約清單：這台電腦在這個帳號建立的預約批次；可以查狀態、整批取消 */
+  function renderSched() {
+    var v = q('.olh-logview'), list = OLH.schedBatches().slice().reverse();
+    v.innerHTML = '<b>📅 預約清單</b>（這台電腦、這個帳號；LINE 會在預約時間自動送出，電腦關著也會送）　<button class="olh-sbtn olh-schx">關閉</button>' +
+      (list.length ? list.map(function (b) {
+        var past = Date.now() > b.at;
+        return '<div style="border:1px solid #ddd;border-radius:8px;padding:6px 8px;margin-top:6px">' +
+          '<b>' + escH(b.name) + '</b>（' + escH(b.type) + '）　預約：<b style="color:#1565c0">' + escH(OLH.fmtAt(b.at)) + '</b>　共 ' + b.items.length + ' 則' +
+          (b.cancelled ? '　<span style="color:#999">已取消</span>' : past ? '　<span style="color:#2e7d32">時間已到</span>' : '　<span style="color:#e65100">等待中</span>') +
+          '<div class="olh-sch-st" data-id="' + escH(b.id) + '" style="font-size:12px;color:#555"></div>' +
+          '<button class="olh-sbtn olh-sch-check" data-id="' + escH(b.id) + '">查看狀態</button> ' +
+          (!b.cancelled && !past ? '<button class="olh-sbtn olh-sch-cancel" data-id="' + escH(b.id) + '" style="color:#c62828;border-color:#c62828">取消這批預約</button>' : '') + '</div>';
+      }).join('') : '<div style="color:#777;margin-top:6px">還沒有預約。</div>');
+    q('.olh-schx').onclick = function () { v.style.display = 'none'; };
+    function batchOf(el) { var id = el.getAttribute('data-id'); return OLH.schedBatches().filter(function (b) { return b.id === id; })[0]; }
+    v.querySelectorAll('.olh-sch-check').forEach(function (btn) {
+      btn.onclick = async function () {
+        var b = batchOf(btn), st = v.querySelector('.olh-sch-st[data-id="' + b.id + '"]'), wait = 0, gone = 0, err = 0;
+        st.textContent = '查詢中…';
+        for (var i = 0; i < b.items.length; i++) {
+          try { var l = await OLH.schedList(b.items[i].chatId); if (l.some(function (x) { return x.scheduledMessageId === b.items[i].smid; })) wait++; else gone++; } catch (e) { err++; }
+        }
+        st.textContent = '還在等待送出 ' + wait + ' 則；' + (Date.now() > b.at ? '已送出 ' : '已不在清單（可能被取消） ') + gone + ' 則' + (err ? '；查不到 ' + err + ' 則' : '');
+      };
+    });
+    v.querySelectorAll('.olh-sch-cancel').forEach(function (btn) {
+      btn.onclick = async function () {
+        if (!btn.classList.contains('sure')) { btn.classList.add('sure'); btn.textContent = '再按一次：確定取消整批預約'; return; }
+        var b = batchOf(btn), ok = 0;
+        btn.disabled = true; btn.textContent = '取消中…';
+        for (var i = 0; i < b.items.length; i++) { try { var s = await OLH.schedDelete(b.items[i].chatId, b.items[i].smid); if (s >= 200 && s < 300) ok++; } catch (e) { } }
+        b.cancelled = true; OLH.schedSave(b);
+        var t = OLH.log().filter(function (x) { return x.id === b.taskId; })[0];
+        if (t) { t.status = '已取消預約（' + ok + ' 則）'; OLH.saveTask(t); }
+        renderSched();
+      };
+    });
+  }
+  q('.olh-schbtn').onclick = function () { var v = q('.olh-logview'); if (v.style.display === 'none' || v.getAttribute('data-k') !== 'sch') { v.setAttribute('data-k', 'sch'); v.style.display = 'block'; renderSched(); } else v.style.display = 'none'; };
+  q('.olh-logbtn').onclick = function () {
+    q('.olh-logview').setAttribute('data-k', 'log'); var v = q('.olh-logview'); v.style.display = v.style.display === 'none' ? 'block' : 'none'; if (v.style.display === 'block') renderLog(); };
 
   /* ========== 三個工具 ========== */
   function mount(k) { return function (panel) { slot(k).appendChild(panel); }; }
@@ -1662,6 +1734,13 @@
     '<label style="cursor:pointer"><input type="radio" name="lm-porder" value="photo"> 先照片再文字</label></div>' +
     '<div class="lg-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div></div></div>' +
     '<div class="lg-step"><h4>④ 預覽</h4>' +
+    '<div class="lg-schbar" style="margin-bottom:6px;padding:6px 8px;border:1px solid #90caf9;border-radius:8px;background:#f3f8fe">' +
+    '<label style="cursor:pointer;margin-right:12px"><input type="radio" name="lm-when" value="now" checked> 立即發送</label>' +
+    '<label style="cursor:pointer"><input type="radio" name="lm-when" value="later"> 📅 <b>預約發送</b></label>' +
+    '<span class="lg-sch-when" style="display:none;margin-left:8px"><input type="date" class="lg-sch-date" style="padding:3px;border:1px solid #ccc;border-radius:6px"> ' +
+    '<select class="lg-sch-time" style="padding:3px;border:1px solid #ccc;border-radius:6px"></select> <b class="lg-sch-show" style="color:#1565c0"></b></span>' +
+    '<div class="lg-muted lg-sch-hint" style="display:none;margin-top:4px">由 LINE 在預約時間自動送出（電腦關著也會送）。只能預約<b>文字</b>（照片、圖卡不會預約）；' +
+    '每個聊天室同時只能有 1 則預約；時間以 10 分鐘為單位。建好後可以在 ⚙ →「📅 預約清單」查看或取消。</div></div>' +
     '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：沒寫作業通知" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
@@ -1715,6 +1794,7 @@
   /* 訊息預覽：用「吳政興」當範例，邊打字邊顯示家長會收到的樣子（還沒填的空格保留 [方括號]） */
   var SAMPLE_NAME = '吳政興';
   function useCardOn() { var c = panel.querySelector('.lg-usecard'); return !!(c && c.checked && window.OLH && window.OLH.card); }
+  if (!(window.OLH && window.OLH.card)) { var ucl = panel.querySelector('.lg-usecard'); if (ucl) ucl.closest('label').style.display = 'none'; }   /* 圖卡目前只在測試版 */
   /* 通知圖卡：訊息第一行當標題，其他行照順序列出 */
   function msgCard(text) {
     var ls = String(text || '').split('\n').filter(function (l) { return l.trim(); });
@@ -2069,6 +2149,90 @@
     box.scrollIntoView({ block: 'center' });
   }
 
+
+  /* ========== 預約發送（用 LINE 後台本身的預約訊息） ========== */
+  (function () {
+    var bar = panel.querySelector('.lg-schbar');
+    if (!window.OLH || !window.OLH.schedCreate) { if (bar) bar.style.display = 'none'; return; }
+    var sel = panel.querySelector('.lg-sch-time'), h = '';
+    for (var m = 0; m < 24 * 60; m += 10) h += '<option>' + ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + m % 60).slice(-2) + '</option>';
+    sel.innerHTML = h;
+    var d0 = new Date(Math.ceil((Date.now() + 30 * 60000) / 600000) * 600000);
+    panel.querySelector('.lg-sch-date').value = d0.getFullYear() + '-' + ('0' + (d0.getMonth() + 1)).slice(-2) + '-' + ('0' + d0.getDate()).slice(-2);
+    sel.value = ('0' + d0.getHours()).slice(-2) + ':' + ('0' + d0.getMinutes()).slice(-2);
+    function show() {
+      var later = whenMode() === 'later';
+      panel.querySelector('.lg-sch-when').style.display = later ? '' : 'none';
+      panel.querySelector('.lg-sch-hint').style.display = later ? 'block' : 'none';
+      var at = schedAt(); panel.querySelector('.lg-sch-show').textContent = at ? '→ ' + window.OLH.fmtAt(at) : '';
+      var sb = panel.querySelector('.lg-send'); if (sb && !state.busy) sb.textContent = later ? '📅 建立預約' : '開始發送';
+    }
+    panel.querySelectorAll('input[name=lm-when]').forEach(function (r) { r.addEventListener('change', show); });
+    panel.querySelector('.lg-sch-date').addEventListener('change', show); sel.addEventListener('change', show);
+    show();
+  })();
+  function whenMode() { var r = panel.querySelector('input[name=lm-when]:checked'); return r ? r.value : 'now'; }
+  function schedAt() {
+    var d = panel.querySelector('.lg-sch-date').value, tm = panel.querySelector('.lg-sch-time').value;
+    if (!d || !tm) return null;
+    var p = d.split('-'), q2 = tm.split(':');
+    return new Date(+p[0], +p[1] - 1, +p[2], +q2[0], +q2[1], 0, 0).getTime();
+  }
+  async function doSchedule(jobs) {
+    var O = window.OLH, at = schedAt();
+    if (!at) { alert('請選預約的日期和時間。'); return; }
+    if (at < Date.now() + 10 * 60000) { alert('預約時間要在現在的 10 分鐘以後。'); return; }
+    if (at > Date.now() + O.SCHED_MAX_DAYS * 86400000) { alert('最多只能預約 ' + O.SCHED_MAX_DAYS + ' 天以內。'); return; }
+    var names = {}; jobs.forEach(function (j) { names[j.it.student] = 1; });
+    var extra = jobs.some(function (j) { return (j.it.photos && j.it.photos.length) || j.it.card || state.useCard; });
+    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將「預約」' + jobs.length + ' 則訊息，給 ' + Object.keys(names).length + ' 位學生的家長。\n' +
+      '📅 預約時間：' + O.fmtAt(at) + '（到時候由 LINE 自動送出）\n' + (extra ? '⚠ 預約只能發文字：照片、圖卡不會一起預約。\n' : '') +
+      '\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+    if (!ans) return;
+    state.busy = true;
+    panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
+    var task = O.newTask('通知', ($('.lg-task').value.trim() || '（未命名）') + '（預約）', jobs.length);
+    var batch = { id: task.id, taskId: task.id, name: task.name, type: '通知', at: at, created: Date.now(), items: [] };
+    var byStudent = {};
+    for (var i = 0; i < jobs.length; i++) {
+      var it = jobs[i].it, c = jobs[i].c;
+      $('.lg-prog').textContent = '建立預約 ' + (i + 1) + ' / ' + jobs.length + '：' + it.student + ' → ' + c.nick;
+      try {
+        if (!it.text.trim()) { c.result = '略過：沒有文字（預約只能發文字）'; continue; }
+        if (!byStudent[it.student]) { byStudent[it.student] = {}; (await searchContacts(it.student)).forEach(function (x) { byStudent[it.student][x.contactId] = displayName(x); }); }
+        var nowNick = byStudent[it.student][c.contactId];
+        if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒預約）'; continue; }
+        var exist = await O.schedList(c.contactId);
+        if (exist.length) { c.result = '略過：這個聊天室已經有一則預約（' + O.fmtAt(exist[0].scheduledAt) + '），LINE 一個聊天室只能預約一則'; continue; }
+        var r = await O.schedCreate(c.contactId, it.text, at);
+        if (r.status >= 200 && r.status < 300 && r.id) { c.result = '已預約'; c.smid = r.id; batch.items.push({ chatId: c.contactId, nick: c.nick, student: it.student, smid: r.id }); O.schedSave(batch); }
+        else c.result = '預約失敗（代碼 ' + r.status + (r.code ? '：' + r.code : '') + '）';
+      } catch (e) { c.result = '預約失敗（' + e.message + '）'; }
+      await sleep(400);
+    }
+    /* 確認：每個聊天室的 LINE 預約清單裡真的有 */
+    for (var k = 0; k < jobs.length; k++) {
+      var cc = jobs[k].c; if (!cc.smid) continue;
+      $('.lg-prog').textContent = '確認預約 ' + (k + 1) + ' / ' + jobs.length;
+      try { var l = await O.schedList(cc.contactId); cc.result = l.some(function (x) { return x.scheduledMessageId === cc.smid; }) ? '已預約（✔ 已在 LINE 預約清單確認）' : '已送出預約，但清單裡查不到，請到聊天室確認'; } catch (e) { }
+    }
+    var ok = batch.items.length;
+    task.ok = ok; task.notOk = task.fail = jobs.length - ok; task.status = '已預約 ' + O.fmtAt(at); task.closed = true; O.saveTask(task);
+    if (ok) O.schedSave(batch);
+    state.busy = false;
+    panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = false; });
+    var rows = jobs.map(function (j) {
+      var good = /^已預約/.test(j.c.result);
+      return '<tr><td>' + esc(j.it.student) + '</td><td>' + esc(j.c.nick) + '</td><td style="color:' + (good ? '#2e7d32' : '#c62828') + ';font-weight:bold">' + esc(j.c.result) + '</td></tr>';
+    }).join('');
+    $('.lg-out').innerHTML = '<div class="lg-done ' + (ok === jobs.length ? 'lg-done-ok' : 'lg-done-bad') + '">📅 已預約 ' + ok + ' / ' + jobs.length + ' 則，' +
+      O.fmtAt(at) + ' 由 LINE 自動送出' + (ok < jobs.length ? '<div style="font-size:13px;font-weight:normal">沒預約到的請看下面的原因。</div>' : '') +
+      '<div style="font-size:13px;font-weight:normal">要查看或取消：⚙ →「📅 預約清單」。</div></div>' +
+      '<table><tr><th style="width:84px">學生</th><th>發給</th><th style="width:44%">結果</th></tr>' + rows + '</table>';
+    $('.lg-prog').textContent = '預約完成：' + ok + ' / ' + jobs.length + ' 則。';
+    $('.lg-out').firstChild.scrollIntoView({ block: 'nearest' });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
   async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
@@ -2079,6 +2243,7 @@
       it.contacts.forEach(function (c) { if (c.checked) jobs.push({ it: it, c: c }); });
     });
     if (!jobs.length) { alert('沒有勾選任何要發送的 LINE。'); return; }
+    if (!resendJobs && whenMode() === 'later') return doSchedule(jobs);
     var names = {}; jobs.forEach(function (j) { names[j.it.student] = 1; });
     var nStudents = Object.keys(names).length;
     var hourWarn = '';
@@ -2560,9 +2725,10 @@
     /* 五標（和大考中心一樣用百分位數）：頂標＝第 88、前標＝第 75、均標＝第 50、後標＝第 25、底標＝第 12 百分位數的分數 */
     var asc = scores.slice().sort(function (a, b) { return a - b; });
     var pct = function (p) { if (!asc.length) return ''; var v = asc[Math.max(0, Math.ceil(p / 100 * asc.length) - 1)]; return String(Math.round(v * 10) / 10); };
-    [['頂標', 88], ['前標', 75], ['均標', 50], ['後標', 25], ['底標', 12]].forEach(function (b) { add(b[0], function () { return pct(b[1]); }); });
+    var five = !!(window.OLH && window.OLH.features && window.OLH.features.five);   /* 五標目前只在測試版 */
+    if (five) [['頂標', 88], ['前標', 75], ['均標', 50], ['後標', 25], ['底標', 12]].forEach(function (b) { add(b[0], function () { return pct(b[1]); }); });
     t.summary = '應考人數 ' + count + (t.computed.indexOf('平均') >= 0 && count ? '、平均 ' + t.records[0]['平均'] : '') +
-      (count ? '、五標 ' + ['頂標', '前標', '均標', '後標', '底標'].map(function (k) { return k.charAt(0) + ' ' + t.records[0][k]; }).join('／') : '');
+      (five && count ? '、五標 ' + ['頂標', '前標', '均標', '後標', '底標'].map(function (k) { return k.charAt(0) + ' ' + t.records[0][k]; }).join('／') : '');
   }
 
   /* ========== 訊息 ========== */
@@ -2736,6 +2902,13 @@
     '<div class="lg-livepv" style="margin-top:8px"></div></div>' +
     '<div class="lg-step lg-s4 lg-locked"><h4>④ 預覽</h4>' +
     '<label style="display:block;margin-bottom:6px;cursor:pointer"><input type="checkbox" class="lg-usecard" checked> 📇 同時附上<b>成績圖卡</b>（每位家長：文字＋一張圖卡）</label>' +
+    '<div class="lg-schbar" style="margin-bottom:6px;padding:6px 8px;border:1px solid #90caf9;border-radius:8px;background:#f3f8fe">' +
+    '<label style="cursor:pointer;margin-right:12px"><input type="radio" name="lg-when" value="now" checked> 立即發送</label>' +
+    '<label style="cursor:pointer"><input type="radio" name="lg-when" value="later"> 📅 <b>預約發送</b></label>' +
+    '<span class="lg-sch-when" style="display:none;margin-left:8px"><input type="date" class="lg-sch-date" style="padding:3px;border:1px solid #ccc;border-radius:6px"> ' +
+    '<select class="lg-sch-time" style="padding:3px;border:1px solid #ccc;border-radius:6px"></select> <b class="lg-sch-show" style="color:#1565c0"></b></span>' +
+    '<div class="lg-muted lg-sch-hint" style="display:none;margin-top:4px">由 LINE 在預約時間自動送出（電腦關著也會送）。只能預約<b>文字</b>（照片、圖卡不會預約）；' +
+    '每個聊天室同時只能有 1 則預約；時間以 10 分鐘為單位。建好後可以在 ⚙ →「📅 預約清單」查看或取消。</div></div>' +
     '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：高一數學小考成績" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
@@ -2751,6 +2924,7 @@
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
 
   function useCardOn() { var c = panel.querySelector('.lg-usecard'); return !!(c && c.checked && window.OLH && window.OLH.card); }
+  if (!(window.OLH && window.OLH.card)) { var ucl = panel.querySelector('.lg-usecard'); if (ucl) ucl.closest('label').style.display = 'none'; }   /* 圖卡目前只在測試版 */
 
   /* 訊息預覽：用「吳政興」當範例（分數等用 Excel 第一位的；還沒放 Excel 就用範例數字），邊改邊顯示家長會收到的樣子 */
   var SAMPLE_NAME = '吳政興';
@@ -3174,6 +3348,90 @@
     box.scrollIntoView({ block: 'center' });
   }
 
+
+  /* ========== 預約發送（用 LINE 後台本身的預約訊息） ========== */
+  (function () {
+    var bar = panel.querySelector('.lg-schbar');
+    if (!window.OLH || !window.OLH.schedCreate) { if (bar) bar.style.display = 'none'; return; }
+    var sel = panel.querySelector('.lg-sch-time'), h = '';
+    for (var m = 0; m < 24 * 60; m += 10) h += '<option>' + ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + m % 60).slice(-2) + '</option>';
+    sel.innerHTML = h;
+    var d0 = new Date(Math.ceil((Date.now() + 30 * 60000) / 600000) * 600000);
+    panel.querySelector('.lg-sch-date').value = d0.getFullYear() + '-' + ('0' + (d0.getMonth() + 1)).slice(-2) + '-' + ('0' + d0.getDate()).slice(-2);
+    sel.value = ('0' + d0.getHours()).slice(-2) + ':' + ('0' + d0.getMinutes()).slice(-2);
+    function show() {
+      var later = whenMode() === 'later';
+      panel.querySelector('.lg-sch-when').style.display = later ? '' : 'none';
+      panel.querySelector('.lg-sch-hint').style.display = later ? 'block' : 'none';
+      var at = schedAt(); panel.querySelector('.lg-sch-show').textContent = at ? '→ ' + window.OLH.fmtAt(at) : '';
+      var sb = panel.querySelector('.lg-send'); if (sb && !state.busy) sb.textContent = later ? '📅 建立預約' : '開始發送';
+    }
+    panel.querySelectorAll('input[name=lg-when]').forEach(function (r) { r.addEventListener('change', show); });
+    panel.querySelector('.lg-sch-date').addEventListener('change', show); sel.addEventListener('change', show);
+    show();
+  })();
+  function whenMode() { var r = panel.querySelector('input[name=lg-when]:checked'); return r ? r.value : 'now'; }
+  function schedAt() {
+    var d = panel.querySelector('.lg-sch-date').value, tm = panel.querySelector('.lg-sch-time').value;
+    if (!d || !tm) return null;
+    var p = d.split('-'), q2 = tm.split(':');
+    return new Date(+p[0], +p[1] - 1, +p[2], +q2[0], +q2[1], 0, 0).getTime();
+  }
+  async function doSchedule(jobs) {
+    var O = window.OLH, at = schedAt();
+    if (!at) { alert('請選預約的日期和時間。'); return; }
+    if (at < Date.now() + 10 * 60000) { alert('預約時間要在現在的 10 分鐘以後。'); return; }
+    if (at > Date.now() + O.SCHED_MAX_DAYS * 86400000) { alert('最多只能預約 ' + O.SCHED_MAX_DAYS + ' 天以內。'); return; }
+    var names = {}; jobs.forEach(function (j) { names[j.it.student] = 1; });
+    var extra = jobs.some(function (j) { return (j.it.photos && j.it.photos.length) || j.it.card || state.useCard; });
+    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將「預約」' + jobs.length + ' 則訊息，給 ' + Object.keys(names).length + ' 位學生的家長。\n' +
+      '📅 預約時間：' + O.fmtAt(at) + '（到時候由 LINE 自動送出）\n' + (extra ? '⚠ 預約只能發文字：照片、圖卡不會一起預約。\n' : '') +
+      '\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+    if (!ans) return;
+    state.busy = true;
+    panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
+    var task = O.newTask('成績', ($('.lg-task').value.trim() || '（未命名）') + '（預約）', jobs.length);
+    var batch = { id: task.id, taskId: task.id, name: task.name, type: '成績', at: at, created: Date.now(), items: [] };
+    var byStudent = {};
+    for (var i = 0; i < jobs.length; i++) {
+      var it = jobs[i].it, c = jobs[i].c;
+      $('.lg-prog').textContent = '建立預約 ' + (i + 1) + ' / ' + jobs.length + '：' + it.student + ' → ' + c.nick;
+      try {
+        if (!it.text.trim()) { c.result = '略過：沒有文字（預約只能發文字）'; continue; }
+        if (!byStudent[it.student]) { byStudent[it.student] = {}; (await searchContacts(it.student)).forEach(function (x) { byStudent[it.student][x.contactId] = displayName(x); }); }
+        var nowNick = byStudent[it.student][c.contactId];
+        if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒預約）'; continue; }
+        var exist = await O.schedList(c.contactId);
+        if (exist.length) { c.result = '略過：這個聊天室已經有一則預約（' + O.fmtAt(exist[0].scheduledAt) + '），LINE 一個聊天室只能預約一則'; continue; }
+        var r = await O.schedCreate(c.contactId, it.text, at);
+        if (r.status >= 200 && r.status < 300 && r.id) { c.result = '已預約'; c.smid = r.id; batch.items.push({ chatId: c.contactId, nick: c.nick, student: it.student, smid: r.id }); O.schedSave(batch); }
+        else c.result = '預約失敗（代碼 ' + r.status + (r.code ? '：' + r.code : '') + '）';
+      } catch (e) { c.result = '預約失敗（' + e.message + '）'; }
+      await sleep(400);
+    }
+    /* 確認：每個聊天室的 LINE 預約清單裡真的有 */
+    for (var k = 0; k < jobs.length; k++) {
+      var cc = jobs[k].c; if (!cc.smid) continue;
+      $('.lg-prog').textContent = '確認預約 ' + (k + 1) + ' / ' + jobs.length;
+      try { var l = await O.schedList(cc.contactId); cc.result = l.some(function (x) { return x.scheduledMessageId === cc.smid; }) ? '已預約（✔ 已在 LINE 預約清單確認）' : '已送出預約，但清單裡查不到，請到聊天室確認'; } catch (e) { }
+    }
+    var ok = batch.items.length;
+    task.ok = ok; task.notOk = task.fail = jobs.length - ok; task.status = '已預約 ' + O.fmtAt(at); task.closed = true; O.saveTask(task);
+    if (ok) O.schedSave(batch);
+    state.busy = false;
+    panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = false; });
+    var rows = jobs.map(function (j) {
+      var good = /^已預約/.test(j.c.result);
+      return '<tr><td>' + esc(j.it.student) + '</td><td>' + esc(j.c.nick) + '</td><td style="color:' + (good ? '#2e7d32' : '#c62828') + ';font-weight:bold">' + esc(j.c.result) + '</td></tr>';
+    }).join('');
+    $('.lg-out').innerHTML = '<div class="lg-done ' + (ok === jobs.length ? 'lg-done-ok' : 'lg-done-bad') + '">📅 已預約 ' + ok + ' / ' + jobs.length + ' 則，' +
+      O.fmtAt(at) + ' 由 LINE 自動送出' + (ok < jobs.length ? '<div style="font-size:13px;font-weight:normal">沒預約到的請看下面的原因。</div>' : '') +
+      '<div style="font-size:13px;font-weight:normal">要查看或取消：⚙ →「📅 預約清單」。</div></div>' +
+      '<table><tr><th style="width:84px">學生</th><th>發給</th><th style="width:44%">結果</th></tr>' + rows + '</table>';
+    $('.lg-prog').textContent = '預約完成：' + ok + ' / ' + jobs.length + ' 則。';
+    $('.lg-out').firstChild.scrollIntoView({ block: 'nearest' });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
   async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
@@ -3184,6 +3442,7 @@
       it.contacts.forEach(function (c) { if (c.checked) jobs.push({ it: it, c: c }); });
     });
     if (!jobs.length) { alert('沒有勾選任何要發送的 LINE。'); return; }
+    if (!resendJobs && whenMode() === 'later') return doSchedule(jobs);
     var names = {}; jobs.forEach(function (j) { names[j.it.student] = 1; });
     var nStudents = Object.keys(names).length;
     var nRt = 0, nTu = 0; Object.keys(names).length && jobs.forEach(function (j) { if (j.it.retest) names[j.it.student] |= 2; if (j.it.tutor) names[j.it.student] |= 4; });
