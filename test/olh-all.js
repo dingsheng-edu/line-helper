@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.28', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.29', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1586,7 +1586,7 @@
     '<label style="cursor:pointer"><input type="radio" name="lm-porder" value="photo"> 先照片再文字</label></div>' +
     '<div class="lg-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div></div></div>' +
     '<div class="lg-step"><h4>④ 預覽</h4>' +
-    '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：沒寫作業通知" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
+    '<input type="hidden" class="lg-task">' +   /* 任務名稱：不用填，按「搜尋預覽」時自動取（管理者 2026/10/19 說畫面上拿掉） */
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
       ? '<button class="lg-btn lg-send" disabled title="先按「搜尋預覽」並確認內容" style="background:#c62828;border-color:#c62828">開始發送</button>' +
@@ -1793,7 +1793,7 @@
       records: t0.records.map(function (r) { var o = {}, k; for (k in r) o[k] = r[k]; for (k in vals) o[k] = vals[k]; return o; }) };
     state.busy = true; this.disabled = true; $('.lg-send').disabled = true; $('.lg-out').innerHTML = '';
     try {
-      if (!$('.lg-task').value.trim()) {
+      {
         var tn = $('.lg-tsel') && $('.lg-tsel').value ? $('.lg-tsel').value.replace(/^[\d-]+\s*/, '') + '通知' : '';
         $('.lg-task').value = tn || (tpl.replace(/[\[\]【】\s]/g, '').slice(0, 12) || '照片通知');
       }
@@ -2607,7 +2607,7 @@
     '<textarea class="lg-tpl" style="height:110px"></textarea>' +
     '<div class="lg-livepv" style="margin-top:8px"></div></div>' +
     '<div class="lg-step lg-s4 lg-locked"><h4>④ 預覽</h4>' +
-    '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：高一數學小考成績" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
+    '<input type="hidden" class="lg-task">' +   /* 任務名稱：不用填，按「搜尋預覽」時自動取（管理者 2026/10/19 說畫面上拿掉） */
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
       ? '<button class="lg-btn lg-send" disabled title="先按「搜尋預覽」並確認內容" style="background:#c62828;border-color:#c62828">開始發送</button>' +
@@ -2861,7 +2861,7 @@
         var sc = function (r) { var v = parseFloat(r[sk]); return isNaN(v) ? -Infinity : v; };
         sorted.sort(function (a, b) { return sc(b) - sc(a); });
       }
-      if (!$('.lg-task').value.trim()) $('.lg-task').value = (cls || (t.examName || '').replace(/^\d{3,4}\s*/, '') || '') + (/(小考|考試|成績)$/.test(cls || '') ? '' : '小考成績');
+      $('.lg-task').value = (cls || (t.examName || '').replace(/^\d{3,4}\s*/, '') || '') + (/(小考|考試|成績)$/.test(cls || '') ? '' : '小考成績');
       state.items = await preview({ headers: t.headers, nameHeader: t.nameHeader, records: sorted, scoreKey: sk }, tpl, prog); renderPreview();
       $('.lg-prog').textContent = SEND_ENABLED ? '預覽完成。請逐一確認內容與勾選，沒問題再按「開始發送」。' : '預覽完成。';
       if (SEND_ENABLED) $('.lg-send').disabled = false;
