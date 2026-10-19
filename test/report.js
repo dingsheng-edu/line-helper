@@ -66,7 +66,7 @@
       g.fillStyle = '#222'; g.font = 'bold 32px ' + F; g.fillText('各任務（綠＝成功、紅＝未成功）', 40, 370);
       var maxT = Math.max.apply(null, list.map(function (t) { return t.total; }).concat([1]));
       list.forEach(function (t, i) {
-        var y = 400 + i * rowH, barX = 430, barW = 520;
+        var y = 400 + i * rowH, barX = 400, barW = 480;
         g.fillStyle = '#222'; g.font = '26px ' + F;
         var label = t.name.length > 13 ? t.name.slice(0, 12) + '…' : t.name;
         g.fillText(label, 40, y + 38);
