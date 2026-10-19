@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.19', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.20', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -52,11 +52,11 @@
   var S = '#' + SHELL_ID;
   var css = '' +
     S + '{position:fixed;top:12px;right:12px;width:640px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif;overflow:hidden;resize:both;min-width:360px;min-height:180px}' +
-    S + ' .olh-set{flex:none;display:none;background:#e8f5e9;border-bottom:1px solid #c8e6c9;padding:8px 14px;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}' +
+    S + ' .olh-set{flex:none;display:none;background:#e8f5e9;border-bottom:1px solid #c8e6c9;padding:5px 12px;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px}' +
     S + '.olh-set-on .olh-set{display:flex}' +
-    S + ' .olh-sbtn{padding:2px 12px;border:1px solid #06c755;background:#fff;color:#06a046;border-radius:6px;cursor:pointer;font-size:15px;line-height:1.5}' +
+    S + ' .olh-sbtn{padding:1px 9px;border:1px solid #06c755;background:#fff;color:#06a046;border-radius:6px;cursor:pointer;font-size:13px;line-height:1.5}' +
     S + ' .olh-sbtn:hover{background:#f1fbf4}' +
-    S + ' .olh-zv{min-width:52px;text-align:center;font-weight:bold;font-size:15px}' +
+    S + ' .olh-zv{min-width:40px;text-align:center;font-weight:bold;font-size:13px}' +
     S + ' .olh-set-h{flex-basis:100%;font-size:12px;color:#555}' +
     S + ' .olh-head{flex:none;background:#06c755;color:#fff;padding:8px 10px 8px 14px;display:flex;align-items:center;gap:8px;cursor:move;user-select:none}' +
     S + ' .olh-title{flex:1;min-width:0}' +
@@ -107,11 +107,8 @@
     '<button class="olh-hbtn olh-close" title="關閉">×</button></div>' +
     '<div class="olh-set"><b>縮放比例</b><button class="olh-sbtn olh-zdn" title="縮小">－</button><span class="olh-zv">100%</span>' +
     '<button class="olh-sbtn olh-zup" title="放大">＋</button><button class="olh-sbtn olh-reset">恢復預設</button>' +
-    '<span class="olh-set-h">視窗大小：用滑鼠拖視窗<b>右下角</b>的斜線調整。設定會記在這台電腦，下次打開一樣。</span>' +
-    '<span style="flex-basis:100%;border-top:1px dashed #a5d6a7;margin-top:4px"></span>' +
-    '<b>這台電腦的名稱</b><input class="olh-in olh-pc" placeholder="例如：高群櫃台1" style="width:160px">' +
     '<button class="olh-sbtn olh-logbtn">📋 發送紀錄總表</button>' +
-    '<span class="olh-set-h">總表同步網址（Google 試算表，設定一次就好）：<input class="olh-in olh-sheet" placeholder="https://script.google.com/macros/s/…/exec" style="width:62%"> <span class="olh-sync-st"></span></span></div>' +
+    '<span class="olh-set-h">視窗大小：拖視窗<b>右下角</b>的斜線調整。設定會記在這台電腦。</span></div>' +
     '<div class="olh-logview" style="display:none"></div>' +
     '<div class="olh-pend" style="display:none"></div>' +
     '<div class="olh-acct"><span class="olh-acct-l">目前帳號</span><span class="olh-acct-n">讀取中…</span>' +
@@ -178,8 +175,9 @@
   });
 
   /* ========== 顯示設定：縮放比例、視窗大小（記在這台電腦） ========== */
-  var ZOOMS = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.5], ZOOM_KEY = 'olh-zoom', SIZE_KEY = 'olh-size';
-  var zoom = parseFloat(load(ZOOM_KEY)) || 1;
+  /* 預設 90%（2026/10/19 管理者說 100% 有點太大）；換了記錄名稱，所以大家會先回到新的預設 */
+  var ZOOMS = [0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.1, 1.25, 1.4], ZOOM_KEY = 'olh-zoom2', SIZE_KEY = 'olh-size', ZOOM_DEFAULT = 0.9;
+  var zoom = parseFloat(load(ZOOM_KEY)) || ZOOM_DEFAULT;
   function applyZoom() {
     /* 標題列不縮放，下面的內容才縮放，拖動位置才不會跑掉 */
     ['.olh-acct', '.olh-tabs', '.olh-main'].forEach(function (s) { q(s).style.zoom = zoom; });
@@ -195,7 +193,7 @@
   q('.olh-zup').onclick = function () { stepZoom(1); };
   q('.olh-set-btn').onclick = function () { shell.classList.toggle('olh-set-on'); };
   q('.olh-reset').onclick = function () {
-    zoom = 1; applyZoom();
+    zoom = ZOOM_DEFAULT; applyZoom();
     shell.style.width = ''; shell.style.height = '';
     try { localStorage.removeItem(SIZE_KEY); } catch (e) { }
   };
@@ -236,6 +234,8 @@
      總表：每個任務一列（只有則數，不存家長或學生資料），存在這台電腦；有設定「總表同步網址」就同步到 Google 試算表。
      待補發：沒發出去的訊息內容（含照片）只存在這台電腦的瀏覽器（IndexedDB），關掉分頁、換帳號、重開電腦都還在。 */
   var LOG_KEY = 'olh-log', PC_KEY = 'olh-pc', SHEET_KEY = 'olh-sheet', HOUR_KEY = 'olh-hour-' + botId;
+  /* Google 試算表接收網址（總表同步_設定教學.txt 的 A-5）；建好試算表後填在這裡，所有電腦就會在背景自動同步 */
+  var SHEET_URL = '';
   var botName = '';
   function jget(k, d) { try { return JSON.parse(load(k)) || d; } catch (e) { return d; } }
   function jset(k, v) { save(k, JSON.stringify(v)); }
@@ -263,7 +263,12 @@
     botId: botId,
     HOUR_LIMIT: 200,
     botName: function () { return botName; },
-    pc: function () { return load(PC_KEY) || ''; },
+    /* 這台電腦的代號：第一次自動產生（例如 電腦-7F3K），總表的「主機」欄用 */
+    pc: function () {
+      var v = load(PC_KEY);
+      if (!v) { v = '電腦-' + Math.random().toString(36).slice(2, 6).toUpperCase(); save(PC_KEY, v); }
+      return v;
+    },
     /* 這台電腦 1 小時內發過幾個不同的聊天室（防呆提醒用；其他電腦發的算不到） */
     hourCount: function () {
       var now = Date.now(), m = jget(HOUR_KEY, {}), n = 0, k;
@@ -286,18 +291,16 @@
       if (q('.olh-logview').style.display !== 'none') renderLog();
     },
     log: function () { return jget(LOG_KEY, []); },
+    /* 背景同步到 Google 試算表（網址寫在程式最上面的 SHEET_URL；還沒設定就只存在這台電腦），畫面上不顯示 */
     sync: function () {
-      var url = load(SHEET_KEY);
-      if (!url) { q('.olh-sync-st').textContent = '（還沒設定：紀錄只存在這台電腦）'; return; }
-      var todo = jget(LOG_KEY, []).filter(function (t) { return !t.synced; });
-      q('.olh-sync-st').textContent = todo.length ? '同步中…' : '✔ 已同步';
-      todo.forEach(function (t) {
+      var url = SHEET_URL || load(SHEET_KEY);
+      if (!url) return;
+      jget(LOG_KEY, []).filter(function (t) { return !t.synced; }).forEach(function (t) {
         fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(t) }).then(function () {
           var l2 = jget(LOG_KEY, []);
           l2.forEach(function (x) { if (x.id === t.id && x.updated === t.updated) x.synced = true; });
           jset(LOG_KEY, l2);
-          if (!l2.some(function (x) { return !x.synced; })) q('.olh-sync-st').textContent = '✔ 已同步';
-        }).catch(function () { q('.olh-sync-st').textContent = '⚠ 同步失敗，下次打開會再試'; });
+        }).catch(function () { });
       });
     },
     savePending: function (p) { p.bot = botId; p.botName = botName; return idbDo('readwrite', function (st) { return st.put(p); }).then(refreshPending); },
@@ -359,16 +362,6 @@
     };
   }
   q('.olh-logbtn').onclick = function () { var v = q('.olh-logview'); v.style.display = v.style.display === 'none' ? 'block' : 'none'; if (v.style.display === 'block') renderLog(); };
-  q('.olh-pc').value = OLH.pc();
-  q('.olh-pc').onchange = function () { save(PC_KEY, this.value.trim()); };
-  q('.olh-sheet').value = load(SHEET_KEY) || '';
-  q('.olh-sheet').onchange = function () {
-    var v = this.value.trim();
-    if (v && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(v)) { q('.olh-sync-st').textContent = '⚠ 網址格式不對（要是 https://script.google.com/macros/s/…/exec）'; return; }
-    save(SHEET_KEY, v);
-    if (v) { var l = OLH.log(); l.forEach(function (t) { t.synced = false; }); jset(LOG_KEY, l); }
-    OLH.sync();
-  };
 
   /* ========== 三個工具 ========== */
   function mount(k) { return function (panel) { slot(k).appendChild(panel); }; }
@@ -3249,5 +3242,4 @@
   var first = load(TAB_KEY);
   showTab(TABS.some(function (t) { return t.key === first; }) ? first : TABS[0].key);
   refreshPending(); OLH.sync();
-  if (!OLH.pc()) { shell.classList.add('olh-set-on'); q('.olh-pc').focus(); q('.olh-pc').style.border = '2px solid #e53935'; }
 })();
