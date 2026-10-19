@@ -3389,12 +3389,15 @@
       if (!msgs.length) throw new Error('這個聊天室讀不到文字訊息');
       st.textContent = '機器人思考中…（約 5～15 秒）';
       var r = await fetch(server() + '/assist', { method: 'POST', headers: srvHeaders(true), body: JSON.stringify({ messages: msgs }) });
-      if (!r.ok) {
-        var em = await srvError(r);
-        if (r.status === 403) { save(KEY_KEY, ''); refreshSetup(); }
+      var j = null;
+      try { j = await r.json(); } catch (e) { }
+      /* 中間的 ngrok 有時會把錯誤代碼改成 200，所以看內容有沒有 error 判斷 */
+      if (!r.ok || !j || j.error) {
+        var em = (j && j.error) || ('補習班電腦回應錯誤 ' + r.status);
+        if (r.status === 403 || /密碼不對/.test(em)) { save(KEY_KEY, ''); refreshSetup(); }
         throw new Error(em);
       }
-      render(await r.json(), chatId);
+      render(j, chatId);
       st.textContent = '';
     } catch (e) {
       st.textContent = '';
@@ -3460,6 +3463,10 @@
       return fetch(server() + '/assist/file/' + f.id, { headers: srvHeaders(false) }).then(async function (r) {
         if (!r.ok) throw new Error(await srvError(r));
         var blob = await r.blob();
+        if (/json/.test(blob.type)) {          /* 錯誤訊息被當成 200 傳回來 */
+          var t = {}; try { t = JSON.parse(await blob.text()); } catch (e) { }
+          throw new Error(t.error || '拿不到檔案');
+        }
         return new File([blob], f.name + f.ext, { type: blob.type || 'application/octet-stream' });
       });
     }
