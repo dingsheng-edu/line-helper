@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.23', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.24', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -340,6 +340,19 @@
         var w = g.measureText(c).width + 44;
         g.fillStyle = '#e8eef6'; g.beginPath(); g.roundRect(x, y + 8, w, 58, 29); g.fill();
         g.fillStyle = '#1e3a5f'; g.fillText(c, x + 22, y + 48); x += w + 16;
+      });
+    }]);
+    /* 五標：五格，學生達到的那一標塗藍，旁邊寫「達到〇標」 */
+    if (spec.bands) body.push([200, function (y) {
+      var b = spec.bands, n = b.items.length, gap = 14, cw = (W - P * 2 - gap * (n - 1)) / n;
+      g.fillStyle = '#1e3a5f'; g.font = 'bold 34px ' + F;
+      g.fillText('📊 五標' + (b.scored ? (b.hit >= 0 ? '　達到「' + b.items[b.hit].label + '」' : '　未達底標') : ''), P, y + 46);
+      b.items.forEach(function (it, i) {
+        var x = P + i * (cw + gap), on = i === b.hit;
+        g.fillStyle = on ? '#1565c0' : '#f1f4f8'; g.beginPath(); g.roundRect(x, y + 70, cw, 116, 16); g.fill();
+        g.fillStyle = on ? '#ffffff' : '#666'; g.font = '28px ' + F; g.fillText(it.label, x + (cw - g.measureText(it.label).width) / 2, y + 112);
+        g.font = 'bold 42px ' + F; var v = String(it.v); g.fillStyle = on ? '#ffffff' : '#1e3a5f';
+        g.fillText(v, x + (cw - g.measureText(v).width) / 2, y + 166);
       });
     }]);
     (spec.lines || []).forEach(function (ln) {
@@ -2376,8 +2389,16 @@
     if (rec['平均']) chips.push('班平均 ' + rec['平均']);
     return { title: ((rec['班別'] || '') + ' 小考成績').trim(), sub: name + '｜' + (d.getMonth() + 1) + '/' + d.getDate() + '(' + wk + ')',
       big: score !== '' && score != null ? score + ' 分' : '缺考', bigColor: score !== '' && score != null ? '#1565c0' : '#9e9e9e',
-      chips: chips, alert: rec.__retest ? { title: '需補考／輔導', text: rec.__retest.replace(/!/g, '！') } : null,
+      chips: chips, bands: fiveBands(rec, score), alert: rec.__retest ? { title: '需補考／輔導', text: rec.__retest.replace(/!/g, '！') } : null,
       footer: (window.OLH && window.OLH.botName()) || '' };
+  }
+  /* 五標：[{label, v}]，hit＝這位學生達到的最高一標（缺考或沒有五標就不畫） */
+  function fiveBands(rec, score) {
+    var keys = ['頂標', '前標', '均標', '後標', '底標'];
+    if (!keys.every(function (k) { return rec[k] !== undefined && rec[k] !== ''; })) return null;
+    var s = parseFloat(score), hit = -1;
+    if (!isNaN(s)) for (var i = 0; i < keys.length; i++) { if (s >= parseFloat(rec[keys[i]])) { hit = i; break; } }
+    return { items: keys.map(function (k) { return { label: k, v: rec[k] }; }), hit: hit, scored: !isNaN(s) };
   }
   function cardImg(spec, w) { try { return '<img src="' + window.OLH.card(spec).toDataURL('image/png') + '" style="width:' + w + 'px;border-radius:8px;border:1px solid #ddd;margin-top:6px;display:block">'; } catch (e) { return ''; } }
 
@@ -2536,7 +2557,12 @@
       if (!count) return '';
       return String(Math.round(scores.reduce(function (a, b) { return a + b; }, 0) / count * 10) / 10);
     });
-    t.summary = '應考人數 ' + count + (t.computed.indexOf('平均') >= 0 && count ? '、平均 ' + t.records[0]['平均'] : '');
+    /* 五標（和大考中心一樣用百分位數）：頂標＝第 88、前標＝第 75、均標＝第 50、後標＝第 25、底標＝第 12 百分位數的分數 */
+    var asc = scores.slice().sort(function (a, b) { return a - b; });
+    var pct = function (p) { if (!asc.length) return ''; var v = asc[Math.max(0, Math.ceil(p / 100 * asc.length) - 1)]; return String(Math.round(v * 10) / 10); };
+    [['頂標', 88], ['前標', 75], ['均標', 50], ['後標', 25], ['底標', 12]].forEach(function (b) { add(b[0], function () { return pct(b[1]); }); });
+    t.summary = '應考人數 ' + count + (t.computed.indexOf('平均') >= 0 && count ? '、平均 ' + t.records[0]['平均'] : '') +
+      (count ? '、五標 ' + ['頂標', '前標', '均標', '後標', '底標'].map(function (k) { return k.charAt(0) + ' ' + t.records[0][k]; }).join('／') : '');
   }
 
   /* ========== 訊息 ========== */
@@ -2736,7 +2762,7 @@
     if (t && t.records.length) for (k in t.records[0]) rec[k] = t.records[0][k];
     var nameH = t ? t.nameHeader : '姓名';
     rec[nameH] = SAMPLE_NAME; rec['姓名'] = SAMPLE_NAME;
-    [['分數', '85'], ['名次', '3'], ['應考人數', '20'], ['平均', '78.5']].forEach(function (d) { if (!rec[d[0]]) rec[d[0]] = d[1]; });
+    [['分數', '85'], ['名次', '3'], ['應考人數', '20'], ['平均', '78.5'], ['頂標', '95'], ['前標', '90'], ['均標', '82'], ['後標', '70'], ['底標', '60']].forEach(function (d) { if (!rec[d[0]]) rec[d[0]] = d[1]; });
     rec['班別'] = currentClass() || rec['班別'] || '';
     var txt = tpl.replace(/\[([^\[\]]+)\]|\{([^{}]+)\}/g, function (all, a, b) { var v = rec[(a || b).trim()]; return v ? v : all; });
     var extra = '';
