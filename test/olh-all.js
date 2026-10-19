@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.20', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.21', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -51,19 +51,19 @@
 
   var S = '#' + SHELL_ID;
   var css = '' +
-    S + '{position:fixed;top:12px;right:12px;width:640px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif;overflow:hidden;resize:both;min-width:360px;min-height:180px}' +
+    S + '{position:fixed;top:12px;right:12px;width:560px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif;overflow:hidden;resize:both;min-width:360px;min-height:180px}' +
     S + ' .olh-set{flex:none;display:none;background:#e8f5e9;border-bottom:1px solid #c8e6c9;padding:5px 12px;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px}' +
     S + '.olh-set-on .olh-set{display:flex}' +
     S + ' .olh-sbtn{padding:1px 9px;border:1px solid #06c755;background:#fff;color:#06a046;border-radius:6px;cursor:pointer;font-size:13px;line-height:1.5}' +
     S + ' .olh-sbtn:hover{background:#f1fbf4}' +
     S + ' .olh-zv{min-width:40px;text-align:center;font-weight:bold;font-size:13px}' +
     S + ' .olh-set-h{flex-basis:100%;font-size:12px;color:#555}' +
-    S + ' .olh-head{flex:none;background:#06c755;color:#fff;padding:8px 10px 8px 14px;display:flex;align-items:center;gap:8px;cursor:move;user-select:none}' +
+    S + ' .olh-head{flex:none;background:#06c755;color:#fff;padding:5px 8px 5px 12px;display:flex;align-items:center;gap:6px;cursor:move;user-select:none}' +
     S + ' .olh-title{flex:1;min-width:0}' +
-    S + ' .olh-title b{display:block;font-size:17px;line-height:1.3}' +
+    S + ' .olh-title b{display:block;font-size:15px;line-height:1.3}' +
     S + ' .olh-ver{font-size:12px;font-weight:normal;background:rgba(255,255,255,.25);border-radius:8px;padding:1px 7px;margin-left:4px;vertical-align:2px}' +
     S + ' .olh-title span{display:block;font-size:12px;opacity:.92}' +
-    S + ' .olh-hbtn{flex:none;cursor:pointer;background:rgba(255,255,255,.18);border:none;color:#fff;font-size:18px;line-height:1;width:30px;height:30px;border-radius:6px}' +
+    S + ' .olh-hbtn{flex:none;cursor:pointer;background:rgba(255,255,255,.18);border:none;color:#fff;font-size:16px;line-height:1;width:26px;height:26px;border-radius:6px}' +
     S + ' .olh-hbtn:hover{background:rgba(255,255,255,.35)}' +
     S + ' .olh-acct{flex:none;background:#fff8e1;border-bottom:2px solid #ffca28;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}' +
     S + ' .olh-acct-l{font-size:15px;color:#555}' +
@@ -176,11 +176,12 @@
 
   /* ========== 顯示設定：縮放比例、視窗大小（記在這台電腦） ========== */
   /* 預設 90%（2026/10/19 管理者說 100% 有點太大）；換了記錄名稱，所以大家會先回到新的預設 */
-  var ZOOMS = [0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.1, 1.25, 1.4], ZOOM_KEY = 'olh-zoom2', SIZE_KEY = 'olh-size', ZOOM_DEFAULT = 0.9;
+  /* 畫面上寫的 100% 實際是 BASE（2026/10/19 管理者說介面占比太大，100% 要比以前小）；換了記錄名稱，大家會回到新的 100% */
+  var BASE = 0.86, ZOOMS = [0.8, 0.85, 0.9, 0.95, 1, 1.1, 1.25, 1.4], ZOOM_KEY = 'olh-zoom3', SIZE_KEY = 'olh-size2', ZOOM_DEFAULT = 1;
   var zoom = parseFloat(load(ZOOM_KEY)) || ZOOM_DEFAULT;
   function applyZoom() {
     /* 標題列不縮放，下面的內容才縮放，拖動位置才不會跑掉 */
-    ['.olh-acct', '.olh-tabs', '.olh-main'].forEach(function (s) { q(s).style.zoom = zoom; });
+    ['.olh-set', '.olh-logview', '.olh-pend', '.olh-acct', '.olh-tabs', '.olh-main'].forEach(function (s) { q(s).style.zoom = zoom * BASE; });
     q('.olh-zv').textContent = Math.round(zoom * 100) + '%';
     q('.olh-zdn').disabled = zoom <= ZOOMS[0]; q('.olh-zup').disabled = zoom >= ZOOMS[ZOOMS.length - 1];
     save(ZOOM_KEY, String(zoom));
