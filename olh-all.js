@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.16', VERSION_DATE = '2026/10/18';
+  var VERSION = '1.21', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -45,23 +45,25 @@
     { key: 'tag', name: '批次上標籤', color: '#ef6c00' },
     { key: 'msg', name: '批次發訊息', color: '#6a1b9a' },
     { key: 'grade', name: '批次發成績', color: '#1565c0' }
+    /* 回覆小幫手：2026/10/19 管理者說先不要放，要用時把下面這行和 build_install_page.py 的 assist 那行打開
+    , { key: 'assist', name: '回覆小幫手', color: '#00897b' } */
   ];
 
   var S = '#' + SHELL_ID;
   var css = '' +
-    S + '{position:fixed;top:12px;right:12px;width:640px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif;overflow:hidden;resize:both;min-width:360px;min-height:180px}' +
-    S + ' .olh-set{flex:none;display:none;background:#e8f5e9;border-bottom:1px solid #c8e6c9;padding:8px 14px;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}' +
+    S + '{position:fixed;top:12px;right:12px;width:560px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#222;border:1px solid #cfd8dc;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.28);font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif;overflow:hidden;resize:both;min-width:360px;min-height:180px}' +
+    S + ' .olh-set{flex:none;display:none;background:#e8f5e9;border-bottom:1px solid #c8e6c9;padding:5px 12px;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px}' +
     S + '.olh-set-on .olh-set{display:flex}' +
-    S + ' .olh-sbtn{padding:2px 12px;border:1px solid #06c755;background:#fff;color:#06a046;border-radius:6px;cursor:pointer;font-size:15px;line-height:1.5}' +
+    S + ' .olh-sbtn{padding:1px 9px;border:1px solid #06c755;background:#fff;color:#06a046;border-radius:6px;cursor:pointer;font-size:13px;line-height:1.5}' +
     S + ' .olh-sbtn:hover{background:#f1fbf4}' +
-    S + ' .olh-zv{min-width:52px;text-align:center;font-weight:bold;font-size:15px}' +
+    S + ' .olh-zv{min-width:40px;text-align:center;font-weight:bold;font-size:13px}' +
     S + ' .olh-set-h{flex-basis:100%;font-size:12px;color:#555}' +
-    S + ' .olh-head{flex:none;background:#06c755;color:#fff;padding:8px 10px 8px 14px;display:flex;align-items:center;gap:8px;cursor:move;user-select:none}' +
+    S + ' .olh-head{flex:none;background:#06c755;color:#fff;padding:5px 8px 5px 12px;display:flex;align-items:center;gap:6px;cursor:move;user-select:none}' +
     S + ' .olh-title{flex:1;min-width:0}' +
-    S + ' .olh-title b{display:block;font-size:17px;line-height:1.3}' +
+    S + ' .olh-title b{display:block;font-size:15px;line-height:1.3}' +
     S + ' .olh-ver{font-size:12px;font-weight:normal;background:rgba(255,255,255,.25);border-radius:8px;padding:1px 7px;margin-left:4px;vertical-align:2px}' +
     S + ' .olh-title span{display:block;font-size:12px;opacity:.92}' +
-    S + ' .olh-hbtn{flex:none;cursor:pointer;background:rgba(255,255,255,.18);border:none;color:#fff;font-size:18px;line-height:1;width:30px;height:30px;border-radius:6px}' +
+    S + ' .olh-hbtn{flex:none;cursor:pointer;background:rgba(255,255,255,.18);border:none;color:#fff;font-size:16px;line-height:1;width:26px;height:26px;border-radius:6px}' +
     S + ' .olh-hbtn:hover{background:rgba(255,255,255,.35)}' +
     S + ' .olh-acct{flex:none;background:#fff8e1;border-bottom:2px solid #ffca28;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}' +
     S + ' .olh-acct-l{font-size:15px;color:#555}' +
@@ -77,8 +79,20 @@
     S + '.olh-min .olh-tabs,' + S + '.olh-min .olh-main,' + S + '.olh-min .olh-set{display:none!important}' +
     S + '.olh-min{width:320px!important;height:auto!important;min-height:0;resize:none}' +
     /* 三個工具原本是各自浮在畫面上的視窗，放進分頁後改成普通區塊，並藏起它們自己的標題列 */
-    S + ' #lt-panel-2026,' + S + ' #lg-panel-2026,' + S + ' #lm-panel-2026{position:static!important;width:auto!important;max-width:none!important;max-height:none!important;overflow:visible!important;border:none!important;border-radius:0!important;box-shadow:none!important;z-index:auto!important}' +
-    S + ' .lt-head,' + S + ' .lg-head{display:none!important}';
+    S + ' #lt-panel-2026,' + S + ' #lg-panel-2026,' + S + ' #lm-panel-2026,' + S + ' #la-panel-2026{position:static!important;width:auto!important;max-width:none!important;max-height:none!important;overflow:visible!important;border:none!important;border-radius:0!important;box-shadow:none!important;z-index:auto!important}' +
+    S + ' .lt-head,' + S + ' .lg-head{display:none!important}' +
+    /* 最上面的「上次沒發完的工作」橫幅、發送紀錄總表 */
+    S + ' .olh-pend{flex:none;background:#ffebee;border-bottom:3px solid #e53935;padding:8px 14px;color:#b71c1c}' +
+    S + ' .olh-pend b.t{font-size:16px}' +
+    S + ' .olh-pend .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;background:#fff;border:1px solid #ef9a9a;border-radius:8px;padding:6px 8px;color:#222}' +
+    S + ' .olh-pbtn{padding:5px 12px;border-radius:6px;border:1px solid #c62828;background:#c62828;color:#fff;font-size:14px;font-weight:bold;cursor:pointer}' +
+    S + ' .olh-pbtn.sec{background:#fff;color:#c62828;font-weight:normal}' +
+    S + ' .olh-logview{flex:none;max-height:55%;overflow:auto;border-bottom:2px solid #06c755;background:#fff;padding:8px 10px}' +
+    S + ' .olh-logview table{border-collapse:collapse;font-size:12px;width:100%}' +
+    S + ' .olh-logview th,' + S + ' .olh-logview td{border:1px solid #ddd;padding:3px 5px;white-space:nowrap}' +
+    S + ' .olh-logview th{background:#f5f7f8}' +
+    S + ' .olh-set input.olh-in{padding:3px 6px;border:1px solid #ccc;border-radius:6px;font-size:14px}' +
+    S + '.olh-min .olh-pend .row,' + S + '.olh-min .olh-logview{display:none!important}';
 
   var shell = document.createElement('div');
   shell.id = SHELL_ID;
@@ -93,7 +107,10 @@
     '<button class="olh-hbtn olh-close" title="關閉">×</button></div>' +
     '<div class="olh-set"><b>縮放比例</b><button class="olh-sbtn olh-zdn" title="縮小">－</button><span class="olh-zv">100%</span>' +
     '<button class="olh-sbtn olh-zup" title="放大">＋</button><button class="olh-sbtn olh-reset">恢復預設</button>' +
-    '<span class="olh-set-h">視窗大小：用滑鼠拖視窗<b>右下角</b>的斜線調整。設定會記在這台電腦，下次打開一樣。</span></div>' +
+    '<button class="olh-sbtn olh-logbtn">📋 發送紀錄總表</button>' +
+    '<span class="olh-set-h">視窗大小：拖視窗<b>右下角</b>的斜線調整。設定會記在這台電腦。</span></div>' +
+    '<div class="olh-logview" style="display:none"></div>' +
+    '<div class="olh-pend" style="display:none"></div>' +
     '<div class="olh-acct"><span class="olh-acct-l">目前帳號</span><span class="olh-acct-n">讀取中…</span>' +
     '<span class="olh-acct-h">帳號不對？先到 LINE 後台左上角切換帳號，再按一次書籤。</span></div>' +
     '<div class="olh-tabs">' + TABS.map(function (t) { return '<button data-k="' + t.key + '">' + t.name + '</button>'; }).join('') + '</div>' +
@@ -109,7 +126,7 @@
   /* ========== 目前帳號 ========== */
   fetch('/api/v1/bots/' + botId + '?noFilter=true', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(function (b) { q('.olh-acct-n').textContent = b.name || botId; })
+    .then(function (b) { botName = b.name || botId; q('.olh-acct-n').textContent = botName; })
     .catch(function () { q('.olh-acct-n').textContent = '（讀不到帳號名稱）'; });
 
   /* ========== 分頁 ========== */
@@ -158,11 +175,13 @@
   });
 
   /* ========== 顯示設定：縮放比例、視窗大小（記在這台電腦） ========== */
-  var ZOOMS = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.5], ZOOM_KEY = 'olh-zoom', SIZE_KEY = 'olh-size';
-  var zoom = parseFloat(load(ZOOM_KEY)) || 1;
+  /* 預設 90%（2026/10/19 管理者說 100% 有點太大）；換了記錄名稱，所以大家會先回到新的預設 */
+  /* 畫面上寫的 100% 實際是 BASE（2026/10/19 管理者說介面占比太大，100% 要比以前小）；換了記錄名稱，大家會回到新的 100% */
+  var BASE = 0.86, ZOOMS = [0.8, 0.85, 0.9, 0.95, 1, 1.1, 1.25, 1.4], ZOOM_KEY = 'olh-zoom3', SIZE_KEY = 'olh-size2', ZOOM_DEFAULT = 1;
+  var zoom = parseFloat(load(ZOOM_KEY)) || ZOOM_DEFAULT;
   function applyZoom() {
     /* 標題列不縮放，下面的內容才縮放，拖動位置才不會跑掉 */
-    ['.olh-acct', '.olh-tabs', '.olh-main'].forEach(function (s) { q(s).style.zoom = zoom; });
+    ['.olh-set', '.olh-logview', '.olh-pend', '.olh-acct', '.olh-tabs', '.olh-main'].forEach(function (s) { q(s).style.zoom = zoom * BASE; });
     q('.olh-zv').textContent = Math.round(zoom * 100) + '%';
     q('.olh-zdn').disabled = zoom <= ZOOMS[0]; q('.olh-zup').disabled = zoom >= ZOOMS[ZOOMS.length - 1];
     save(ZOOM_KEY, String(zoom));
@@ -175,7 +194,7 @@
   q('.olh-zup').onclick = function () { stepZoom(1); };
   q('.olh-set-btn').onclick = function () { shell.classList.toggle('olh-set-on'); };
   q('.olh-reset').onclick = function () {
-    zoom = 1; applyZoom();
+    zoom = ZOOM_DEFAULT; applyZoom();
     shell.style.width = ''; shell.style.height = '';
     try { localStorage.removeItem(SIZE_KEY); } catch (e) { }
   };
@@ -211,6 +230,139 @@
     return e.returnValue;
   };
   window.addEventListener('beforeunload', window.__olhUnload);
+
+  /* ========== 發送紀錄總表、待補發（三個工具共用：window.OLH） ==========
+     總表：每個任務一列（只有則數，不存家長或學生資料），存在這台電腦；有設定「總表同步網址」就同步到 Google 試算表。
+     待補發：沒發出去的訊息內容（含照片）只存在這台電腦的瀏覽器（IndexedDB），關掉分頁、換帳號、重開電腦都還在。 */
+  var LOG_KEY = 'olh-log', PC_KEY = 'olh-pc', SHEET_KEY = 'olh-sheet', HOUR_KEY = 'olh-hour-' + botId;
+  /* Google 試算表接收網址（總表同步_設定教學.txt 的 A-5）；建好試算表後填在這裡，所有電腦就會在背景自動同步 */
+  var SHEET_URL = '';
+  var botName = '';
+  function jget(k, d) { try { return JSON.parse(load(k)) || d; } catch (e) { return d; } }
+  function jset(k, v) { save(k, JSON.stringify(v)); }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function nowParts() { var d = new Date(); return { date: d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()), time: pad2(d.getHours()) + ':' + pad2(d.getMinutes()) }; }
+  function uid() { return window.crypto && crypto.randomUUID ? crypto.randomUUID() : 't' + Date.now() + Math.random().toString(16).slice(2); }
+  function escH(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function idb() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open('olh-db', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('pending', { keyPath: 'id' }); };
+      r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
+    });
+  }
+  function idbDo(mode, fn) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction('pending', mode), req = fn(tx.objectStore('pending'));
+        tx.oncomplete = function () { res(req ? req.result : undefined); }; tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+
+  var OLH = window.OLH = {
+    botId: botId,
+    HOUR_LIMIT: 200,
+    botName: function () { return botName; },
+    /* 這台電腦的代號：第一次自動產生（例如 電腦-7F3K），總表的「主機」欄用 */
+    pc: function () {
+      var v = load(PC_KEY);
+      if (!v) { v = '電腦-' + Math.random().toString(36).slice(2, 6).toUpperCase(); save(PC_KEY, v); }
+      return v;
+    },
+    /* 這台電腦 1 小時內發過幾個不同的聊天室（防呆提醒用；其他電腦發的算不到） */
+    hourCount: function () {
+      var now = Date.now(), m = jget(HOUR_KEY, {}), n = 0, k;
+      for (k in m) { if (now - m[k] < 3600000) n++; else delete m[k]; }
+      jset(HOUR_KEY, m); return n;
+    },
+    noteSent: function (chatId) { var m = jget(HOUR_KEY, {}); m[chatId] = Date.now(); jset(HOUR_KEY, m); },
+    newTask: function (type, name, total) {
+      var p = nowParts();
+      return { id: uid(), pc: OLH.pc() || '（未設定）', bot: botName, type: type, name: name, total: total,
+        ok: 0, notOk: 0, resendOk: 0, fail: 0, date: p.date, time: p.time, status: '進行中' };
+    },
+    /* 新增或更新總表的一列（同一個任務 id 會更新同一列） */
+    saveTask: function (t) {
+      var p = nowParts(), log = jget(LOG_KEY, []), i;
+      t.updated = p.date + ' ' + p.time; t.synced = false;
+      for (i = 0; i < log.length && log[i].id !== t.id; i++);
+      log[i] = JSON.parse(JSON.stringify(t));
+      jset(LOG_KEY, log.slice(-500)); OLH.sync();
+      if (q('.olh-logview').style.display !== 'none') renderLog();
+    },
+    log: function () { return jget(LOG_KEY, []); },
+    /* 背景同步到 Google 試算表（網址寫在程式最上面的 SHEET_URL；還沒設定就只存在這台電腦），畫面上不顯示 */
+    sync: function () {
+      var url = SHEET_URL || load(SHEET_KEY);
+      if (!url) return;
+      jget(LOG_KEY, []).filter(function (t) { return !t.synced; }).forEach(function (t) {
+        fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(t) }).then(function () {
+          var l2 = jget(LOG_KEY, []);
+          l2.forEach(function (x) { if (x.id === t.id && x.updated === t.updated) x.synced = true; });
+          jset(LOG_KEY, l2);
+        }).catch(function () { });
+      });
+    },
+    savePending: function (p) { p.bot = botId; p.botName = botName; return idbDo('readwrite', function (st) { return st.put(p); }).then(refreshPending); },
+    removePending: function (id) { return idbDo('readwrite', function (st) { return st['delete'](id); }).then(refreshPending); },
+    listPending: function () { return idbDo('readonly', function (st) { return st.getAll(); }).then(function (r) { return r || []; }); },
+    resumers: {},
+    showTab: function (k) { showTab(k); }
+  };
+
+  /* 最上面的紅色橫幅：上次沒發出去的訊息，一鍵繼續發 */
+  function refreshPending() {
+    return OLH.listPending().then(function (list) {
+      var mine = list.filter(function (p) { return p.bot === botId; }), others = list.length - mine.length, box = q('.olh-pend');
+      if (!mine.length && !others) { box.style.display = 'none'; box.innerHTML = ''; return; }
+      var h = '<b class="t">⚠ 有上次沒發出去的訊息，' + (mine.length ? '按「繼續發送」接著發' : '請切換帳號再補發') + '</b>';
+      mine.forEach(function (p) {
+        h += '<div class="row"><span style="flex:1;min-width:180px"><b>' + escH(p.task.name) + '</b>（' + escH(p.task.type) + '）<br>' +
+          '<span style="font-size:12px;color:#555">' + escH(p.task.date + ' ' + p.task.time) + '　還有 <b style="color:#c62828">' + p.jobs.length + '</b> 則沒發' +
+          (p.reason ? '　原因：' + escH(p.reason) : '') + '</span></span>' +
+          '<button class="olh-pbtn olh-pgo" data-id="' + escH(p.id) + '">▶ 繼續發送</button>' +
+          '<button class="olh-pbtn sec olh-pdrop" data-id="' + escH(p.id) + '">放棄</button></div>';
+      });
+      if (others) h += '<div style="font-size:12px;margin-top:4px">另有 ' + others + ' 筆是其他帳號的工作（' +
+        escH(list.filter(function (p) { return p.bot !== botId; }).map(function (p) { return p.botName || p.bot; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join('、')) + '），切換到那個帳號才會顯示。</div>';
+      box.innerHTML = h; box.style.display = 'block';
+      box.querySelectorAll('.olh-pgo').forEach(function (b) {
+        b.onclick = function () {
+          var p = mine.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+          if (!p || !OLH.resumers[p.tool]) return;
+          showTab(p.tool); OLH.resumers[p.tool](p);
+        };
+      });
+      box.querySelectorAll('.olh-pdrop').forEach(function (b) {
+        b.onclick = function () {
+          if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = '再按一次：確定放棄（不再補發）'; return; }
+          var p = mine.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+          if (p) { p.task.status = '已放棄補發'; OLH.saveTask(p.task); OLH.removePending(p.id); }
+        };
+      });
+    }).catch(function () { });
+  }
+
+  /* 發送紀錄總表（⚙ →「發送紀錄總表」）；可以匯出 Excel */
+  var LOG_COLS = [['pc', '主機'], ['bot', '帳號'], ['type', '訊息'], ['name', '名稱'], ['total', '訊息數'], ['ok', '發送成功'], ['notOk', '未發送成功'],
+    ['resendOk', '補發成功'], ['fail', '未成功'], ['date', '日期'], ['time', '時間'], ['status', '狀態']];
+  function renderLog() {
+    var log = OLH.log().slice().reverse();
+    q('.olh-logview').innerHTML = '<b>發送紀錄總表</b>（這台電腦，最新的在最上面）　<button class="olh-sbtn olh-logcsv">匯出 Excel</button> <button class="olh-sbtn olh-logx">關閉</button>' +
+      '<table><tr><th>NO</th>' + LOG_COLS.map(function (c) { return '<th>' + c[1] + '</th>'; }).join('') + '</tr>' +
+      log.map(function (t, i) { return '<tr><td>' + (log.length - i) + '</td>' + LOG_COLS.map(function (c) { return '<td>' + escH(t[c[0]]) + '</td>'; }).join('') + '</tr>'; }).join('') +
+      '</table>' + (log.length ? '' : '<div style="color:#777;margin-top:6px">還沒有紀錄。</div>');
+    q('.olh-logx').onclick = function () { q('.olh-logview').style.display = 'none'; };
+    q('.olh-logcsv').onclick = function () {
+      var rows = [['NO'].concat(LOG_COLS.map(function (c) { return c[1]; }))];
+      OLH.log().forEach(function (t, i) { rows.push([i + 1].concat(LOG_COLS.map(function (c) { return t[c[0]]; }))); });
+      var csv = '﻿' + rows.map(function (r) { return r.map(function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
+      var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = '發送紀錄總表_' + (OLH.pc() || '這台電腦') + '.csv'; a.click();
+    };
+  }
+  q('.olh-logbtn').onclick = function () { var v = q('.olh-logview'); v.style.display = v.style.display === 'none' ? 'block' : 'none'; if (v.style.display === 'block') renderLog(); };
 
   /* ========== 三個工具 ========== */
   function mount(k) { return function (panel) { slot(k).appendChild(panel); }; }
@@ -720,6 +872,7 @@
     busy(true);
     try {
       await apply(state.rows, state.tagId, prog);
+      logTagTask(tagName(state.tagId), (function () { var a = []; state.rows.forEach(function (r) { r.contacts.forEach(function (c) { if (c.checked && c.result) a.push(c.result); }); }); return a; })());
       $('.lt-prog').textContent = '上標籤完成，正在做漏上檢查…';
       var chk = await check(state.names, state.tagId, prog);
       renderResult(state.rows, chk);
@@ -825,6 +978,16 @@
       count();
     };
     count();
+  }
+
+  /* 上完標籤記到官方LINE小幫手的「發送紀錄總表」（單獨使用時略過）：成功＝新加上或原本就有，未成功＝失敗／略過／停止 */
+  function logTagTask(name, results) {
+    if (!window.OLH || !results.length) return;
+    var tk = window.OLH.newTask('標籤', name, results.length);
+    tk.ok = results.filter(function (r) { return r === '成功' || r === '原本就有'; }).length;
+    tk.notOk = tk.fail = results.length - tk.ok;
+    tk.status = '已結束';
+    window.OLH.saveTask(tk);
   }
 
   /* ========== 分頁切換 ========== */
@@ -1025,6 +1188,7 @@
       st2.newTagId = tagId;
       state.tags = await getTags(); fillTags();
       await applyToItems(targets, tagId, exIds(), function (i, n, nick) { prog2('上標籤中 ' + i + ' / ' + n + '：' + nick); setBar(q2('.p-bar'), i, n); }, function () { return st2.stop; });
+      logTagTask(st2.newName, targets.map(function (x) { return x.result || ''; }));
       prog2('上完了，正在做漏上檢查（重新讀取全部聯絡人）…');
       var total = st2.all ? st2.all.length : 0;
       setBar(q2('.p-bar'), 0, total);
@@ -1107,11 +1271,11 @@
      三個帳號共用，所以不寫補習班名稱）。要改範本文字就改這裡，改完重新產生、發布。
      [姓名] 會換成名單上的學生；其他 [方括號] 會在視窗裡出現填空欄（名稱有「日期」的用行事曆選）。 */
   var TEMPLATES = [
-    { name: '1 作業沒寫', text: '📌 作業未完成｜[姓名]\n📚 [班別]\n✅ 請家長協助：\n1. 提醒孩子今晚完成作業\n2. 下次上課帶來補交\n有問題直接回覆這則訊息就可以，謝謝！' },
-    { name: '2 輔導沒到', text: '📌 輔導未到班｜[姓名]\n📚 [班別]\n✅ 接下來請：\n1. 到櫃台領取今天的考卷\n2. 或回覆這則訊息，我們傳電子檔給您' },
-    { name: '3 缺課', text: '📌 缺課通知｜[姓名]\n🗓 [缺課日期]　[班別]\n✅ 請協助：提醒孩子完成線上補課' },
+    { name: '1 作業沒寫', text: '📌 作業未完成｜[姓名]同學\n📚 [班別]\n✅ 請家長協助：\n1. 提醒孩子盡快完成作業\n2. 下次上課帶來檢查及補交。' },
+    { name: '2 輔導沒到', text: '📌 輔導未到班｜[姓名]\n📚 [班別]\n✅ 接下來請爸爸、媽媽協助：\n1. 到櫃台領取今天的考卷，回家多加練習。\n2. 或回覆這則訊息，我們傳電子檔給您。' },
+    { name: '3 缺課', text: '📌 缺課通知｜[姓名]\n🗓 [缺課日期]　[班別]\n✅ 請協助：提醒孩子自行到classroom完成線上補課' },
     { name: '4 上課提醒', text: '⏰ 上課提醒\n📚 [班別]\n🗓 [日期]　[時間]\n🎒 記得帶講義\n照常上課，請準時到班，謝謝！' },
-    { name: '5 調課通知', text: '🔄 調課通知｜[班別]\n❌ 原本：[日期]　[時間]\n✅ 改為：[新日期]　[新時間]\n新時間不方便的話，直接回覆這則訊息，我們再協助安排。' },
+    { name: '5 調課通知', text: '🔄 調課通知｜[班別]\n❌ 原本：[日期]　[時間]\n✅ 改為：[新日期]　[新時間]' },
     { name: '5-2 停課提醒', text: '🚫 停課提醒\n📚 [班別]\n🗓 [日期] 停課一次\n當天不用到班，之後照原課表上課，謝謝！' }
   ];
 
@@ -1414,6 +1578,7 @@
     '<div class="lg-chips"></div>' +
     '<textarea class="lg-tpl" style="height:130px"></textarea>' +
     '<div class="lg-fill"></div>' +
+    '<div class="lg-livepv" style="display:none;margin-top:8px"></div>' +
     '<div class="lg-photobar" style="margin-top:8px;padding:8px 10px;border:1px dashed #ce93d8;border-radius:8px;background:#fcf7fd">' +
     '📷 <b>附加照片</b>（可以不加）：<input type="file" class="lg-photo" accept="image/jpeg,image/png" multiple>' +
     '<div class="lg-muted">最多 5 張，每張 10MB 以內（jpg、png）。順序：' +
@@ -1421,6 +1586,7 @@
     '<label style="cursor:pointer"><input type="radio" name="lm-porder" value="photo"> 先照片再文字</label></div>' +
     '<div class="lg-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div></div></div>' +
     '<div class="lg-step"><h4>④ 預覽</h4>' +
+    '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：沒寫作業通知" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
       ? '<button class="lg-btn lg-send" disabled title="先按「搜尋預覽」並確認內容" style="background:#c62828;border-color:#c62828">開始發送</button>' +
@@ -1469,6 +1635,29 @@
     return (+p[1]) + '/' + (+p[2]) + '(' + '日一二三四五六'.charAt(d.getDay()) + ')';
   }
   function fillValue(k) { var v = (state.fill[k] || '').trim(); return k.indexOf('日期') >= 0 ? fmtDate(v) : v; }
+
+  /* 訊息預覽：用「吳政興」當範例，邊打字邊顯示家長會收到的樣子（還沒填的空格保留 [方括號]） */
+  var SAMPLE_NAME = '吳政興';
+  function renderLivePreview() {
+    var box = $('.lg-livepv'); if (!box) return;
+    var tpl = $('.lg-tpl').value, each = mode() === 'each';
+    if (!tpl.trim() && !(state.photos && state.photos.length && !each)) { box.style.display = 'none'; return; }
+    var nameH = state.table ? state.table.nameHeader : '姓名';
+    var txt = tpl.replace(/\[([^\[\]]+)\]|\{([^{}]+)\}/g, function (all, a, b) {
+      var k = (a || b).trim();
+      if (k === '姓名' || k === nameH) return SAMPLE_NAME;
+      if (each && state.table && k === state.table.msgHeader) return '（這一位在 Excel「' + k + '」欄的內容）';
+      if (Object.prototype.hasOwnProperty.call(state.fill, k) && fillValue(k)) return fillValue(k);
+      return all;
+    }).replace(/!/g, '！');
+    var nPh = !each && state.photos ? state.photos.length : 0;
+    box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + '）</div>' +
+      '<div class="lg-msg" style="max-width:360px">' + (txt.trim() ? esc(txt) : '<span class="lg-muted">（沒有文字，只發照片）</span>') +
+      (nPh ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + state.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>';
+    box.style.display = 'block';
+  }
+  panel.addEventListener('input', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
+  panel.addEventListener('change', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
   var lastKeys = '';
   function renderFill(force) {
     var keys = fillKeys(), sig = keys.join('|');
@@ -1571,7 +1760,7 @@
       b.onclick = function () { state.photos.splice(+this.dataset.k, 1); renderThumbs(); photosChanged(); };
     });
   }
-  function photosChanged() { state.items = null; $('.lg-out').innerHTML = ''; $('.lg-send').disabled = true; }
+  function photosChanged() { state.items = null; $('.lg-out').innerHTML = ''; $('.lg-send').disabled = true; renderLivePreview(); }
   $('.lg-photo').onchange = function () {
     var bad = [];
     Array.prototype.forEach.call(this.files, function (f) {
@@ -1604,6 +1793,10 @@
       records: t0.records.map(function (r) { var o = {}, k; for (k in r) o[k] = r[k]; for (k in vals) o[k] = vals[k]; return o; }) };
     state.busy = true; this.disabled = true; $('.lg-send').disabled = true; $('.lg-out').innerHTML = '';
     try {
+      if (!$('.lg-task').value.trim()) {
+        var tn = $('.lg-tsel') && $('.lg-tsel').value ? $('.lg-tsel').value.replace(/^[\d-]+\s*/, '') + '通知' : '';
+        $('.lg-task').value = tn || (tpl.replace(/[\[\]【】\s]/g, '').slice(0, 12) || '照片通知');
+      }
       state.items = await preview(table, tpl, prog); renderPreview();
       $('.lg-prog').textContent = SEND_ENABLED ? '預覽完成。請逐一確認內容與勾選，沒問題再按「開始發送」。' : '預覽完成。';
       if (SEND_ENABLED) $('.lg-send').disabled = false;
@@ -1700,8 +1893,98 @@
     });
   }
 
+
+  /* ========== 任務紀錄、保留待補發（配合官方LINE小幫手的總表；單獨使用時這些功能會自動略過） ========== */
+  var OLHX = window.OLH || null;
+  function remainingJobs() {
+    var out = [];
+    (state.items || []).forEach(function (it) { it.contacts.forEach(function (c) { if (c.resend === 'safe' || c.resend === 'unsure') out.push({ it: it, c: c }); }); });
+    return out;
+  }
+  function updateTask(jobs, isResend) {
+    if (!state.task || !OLHX) return;
+    var okNow = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
+    if (!isResend) { state.task.ok = okNow; state.task.notOk = state.task.total - okNow; }
+    else state.task.resendOk += okNow;
+    state.task.fail = remainingJobs().length;
+    if (!state.task.closed) state.task.status = state.limit ? '保留待補發（已達上限）' : (state.task.fail ? '未完成' : '已發完（待按結束）');
+    OLHX.saveTask(state.task);
+  }
+  /* 把還沒發出去的訊息內容存到這台電腦（關掉分頁、換帳號都還在），之後最上面可以按「繼續發送」 */
+  function keepPending(reason) {
+    var jobs = remainingJobs();
+    if (!OLHX || !state.task) return Promise.resolve(0);
+    if (!jobs.length) { if (state.pendingId) OLHX.removePending(state.pendingId); state.pendingId = null; return Promise.resolve(0); }
+    var p = { id: state.pendingId || state.task.id, tool: 'msg', task: state.task, reason: reason || '', porder: state.porder || '',
+      jobs: jobs.map(function (j) {
+        return { student: j.it.student, row: j.it.row, score: j.it.score, text: j.it.text, key: j.it.key || '', photos: j.it.photos || [],
+          retest: !!j.it.retest, contactId: j.c.contactId, nick: j.c.nick, unsure: j.c.resend === 'unsure',
+          parts: j.c.parts ? j.c.parts.map(function (x) { return { kind: x.kind, i: x.i, ok: !!(x.ok && x.seen) }; }) : null };
+      }) };
+    state.pendingId = p.id;
+    return OLHX.savePending(p).then(function () { return jobs.length; });
+  }
+  /* 從最上面紅色橫幅按「繼續發送」：把保留的工作放回來，接著發 */
+  if (OLHX) OLHX.resumers['msg'] = function (p) {
+    if (state.busy) { alert('目前正在發送中，請等這一批發完。'); return; }
+    var byKey = {}, items = [], jobs = [];
+    p.jobs.forEach(function (j) {
+      var k = j.student + '|' + j.text + '|' + j.key, it = byKey[k];
+      if (!it) { it = byKey[k] = { student: j.student, row: j.row, score: j.score, text: j.text, key: j.key, photos: j.photos, retest: j.retest, contacts: [], warn: [], unknown: [], missing: [], block: '' }; items.push(it); }
+      var c = { contactId: j.contactId, nick: j.nick, checked: true, note: j.unsure ? '上次不確定有沒有送出' : '', result: '', resend: '',
+        parts: j.parts ? j.parts.map(function (x) { return { kind: x.kind, i: x.i, ok: x.ok, seen: x.ok }; }) : null };
+      it.contacts.push(c); jobs.push({ it: it, c: c });
+    });
+    state.items = items; state.task = p.task; state.task.closed = false; state.pendingId = p.id; if (p.porder) state.porder = p.porder;
+    $('.lg-task').value = p.task.name;
+    panel.querySelectorAll('.lg-locked').forEach(function (s) { s.classList.remove('lg-locked'); });
+    $('.lg-out').innerHTML = '<div class="lg-box" style="border:2px solid #c62828;background:#fff5f5"><b>繼續上次的工作：「' + esc(p.task.name) + '」</b>（' + esc(p.task.date + ' ' + p.task.time) + '）<br>還有 <b>' + jobs.length + '</b> 則沒發出去。按下面的確認就會接著發。</div>';
+    doSend(jobs, true);
+  };
+  function taskButtons(need) {
+    if (!OLHX || !state.task) return '';
+    if (state.task.closed) return '<div class="lg-muted" style="margin-top:6px">✔ 這個任務已結束，已記到發送紀錄總表（' + esc(state.task.status) + '）。</div>';
+    return need
+      ? '<br><button class="lg-btn lg-sec lg-keep" style="color:#c62828;border-color:#c62828">先結束任務（保留未成功的訊息）</button>'
+      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">✔ 結束此階段任務</button>';
+  }
+  function wireTaskButtons() {
+    var end = $('.lg-endtask'), keep = $('.lg-keep');
+    if (end) end.onclick = function () {
+      state.task.status = '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
+      if (state.pendingId) { OLHX.removePending(state.pendingId); state.pendingId = null; }
+      renderSendResult();
+    };
+    if (keep) keep.onclick = function () {
+      var n = remainingJobs().length;
+      var box = document.createElement('div');
+      box.className = 'lg-box'; box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin-top:6px';
+      box.innerHTML = '<b>將未成功發出去的 ' + n + ' 則訊息內容，先保留至系統內。</b><br>之後打開小幫手，最上面會有「▶ 繼續發送」可以補發。<br>' +
+        '<button class="lg-btn lg-keep-ok" style="background:#c62828;border-color:#c62828">確定保留並結束任務</button><button class="lg-btn lg-sec lg-keep-no">取消</button>';
+      keep.parentNode.insertBefore(box, keep.nextSibling); keep.style.display = 'none';
+      box.querySelector('.lg-keep-no').onclick = function () { box.parentNode.removeChild(box); keep.style.display = ''; };
+      box.querySelector('.lg-keep-ok').onclick = function () {
+        keepPending('先結束任務').then(function () {
+          state.task.status = '保留待補發'; state.task.closed = true; OLHX.saveTask(state.task); renderSendResult();
+        });
+      };
+    };
+  }
+  /* 已達 LINE 短時間上限：剩下的自動保留，跳出說明 */
+  function showLimitBox(sent, left) {
+    var box = document.createElement('div');
+    box.className = 'lg-box'; box.style.cssText = 'border:3px solid #c62828;background:#ffebee;margin:8px 0;font-size:15px';
+    box.innerHTML = '<b style="font-size:17px;color:#b71c1c">⚠ 已達短時間內可發送的訊息數量上限</b><br>' +
+      '這次已發出 <b>' + sent + '</b> 則，剩下 <b>' + left + '</b> 則的內容已保留在這台電腦。<br>' +
+      '換個使用者登入即可恢復發訊息功能：切換帳號後重新打開小幫手，最上面按「<b>▶ 繼續發送</b>」就會接著發。<br>' +
+      '<button class="lg-btn lg-sec lg-limit-x">知道了</button>';
+    $('.lg-out').insertBefore(box, $('.lg-out').firstChild);
+    box.querySelector('.lg-limit-x').onclick = function () { box.parentNode.removeChild(box); };
+    box.scrollIntoView({ block: 'center' });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
-  async function doSend(resendJobs) {
+  async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
     var jobs = [];
     if (resendJobs) jobs = resendJobs;
@@ -1712,9 +1995,20 @@
     if (!jobs.length) { alert('沒有勾選任何要發送的 LINE。'); return; }
     var names = {}; jobs.forEach(function (j) { names[j.it.student] = 1; });
     var nStudents = Object.keys(names).length;
-    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
+    var hourWarn = '';
+    if (OLHX) {
+      var hc = OLHX.hourCount();
+      if (hc + jobs.length > OLHX.HOUR_LIMIT) hourWarn = '⚠ 提醒：這台電腦 1 小時內已發 ' + hc + ' 個聊天室，這次再發 ' + jobs.length + ' 個，可能超過 LINE「1 小時 200 個聊天室」的上限。' +
+        '發到一半被擋的話，剩下的會自動保留，之後可以接著發。\n\n';
+    }
+    var ans = await askCount(hourWarn + '帳號：' + $('.lg-bot').textContent + '\n即將' + (resuming ? '繼續發送' : resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
       (jobs[0].it.photos && jobs[0].it.photos.length ? '每位：' + (jobs[0].it.text.trim() ? '文字＋' : '') + jobs[0].it.photos.length + ' 張照片\n' : '') + '送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
     if (!ans) return;
+    if (OLHX && (!resendJobs || !state.task || state.task.closed)) {
+      if (!resendJobs) { state.task = OLHX.newTask('通知', $('.lg-task').value.trim() || '（未命名）', jobs.length); state.pendingId = null; }
+      else if (state.task) state.task.closed = false;
+    }
+    state.limit = false;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
@@ -1740,11 +2034,12 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];
+    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000];
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
     var cur = null;
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i], it = job.it, c = job.c;
+      if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
       state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
@@ -1769,20 +2064,20 @@
           /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
           while (st === 429 && tries < WAITS.length && !state.stop) {
             gap = 3000;
-            state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…');
+            state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
             await sleep(WAITS[tries]); tries++;
             part.sendId = newSendId(); part.sentAt = Date.now();
             st = await sendPart(c.contactId, it, part);
           }
           if (st >= 200 && st < 300) part.ok = true;
-          else if (st === 429) { part.sendId = null; failKind = 'blocked'; break; }
+          else if (st === 429) { part.sendId = null; failKind = 'blocked'; state.limit = true; break; }
           else { part.unsure = true; failKind = 'unsure'; break; }
           if (pi < c.parts.length - 1) await sleep(800);
         }
         cur = null;
-        if (!failKind) { c.result = '成功'; markSent(c.contactId, it.key); done++; }
+        if (!failKind) { c.result = '成功'; markSent(c.contactId, it.key); done++; if (OLHX) OLHX.noteSent(c.contactId); }
         else if (failKind === 'stop') { c.result = '已停止（還有部分沒發）'; c.resend = 'safe'; }
-        else if (failKind === 'blocked') { c.result = '失敗：LINE 暫時擋下（沒發），可以按下面「重發」'; c.resend = 'safe'; }
+        else if (failKind === 'blocked') { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; }
         else { c.result = '失敗（代碼 ' + st + '），請到聊天室確認有沒有送出'; c.resend = 'unsure'; }
       } catch (e) {
         if (cur && cur.sendId) cur.unsure = true;
@@ -1797,10 +2092,15 @@
     await verifySent(jobs);
     $('.lg-preview').disabled = false;
     state.busy = false;
+    updateTask(jobs, !!resendJobs);
+    var limitHit = state.limit && OLHX;
+    if (limitHit) { await keepPending('已達短時間內可發送的訊息數量上限'); state.task.status = '保留待補發（已達上限）'; state.task.closed = true; OLHX.saveTask(state.task); }
     var okN = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
     var vN = jobs.filter(function (j) { return j.c.verify === 'ok'; }).length;
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
+    if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
+    else if (resuming && OLHX) keepPending(state.task.status);
   }
 
   /* 發完之後到每個聊天室確認真的有這則訊息（和批次發成績同一套）：
@@ -1906,12 +2206,13 @@
     var banner = need
       ? '<div class="lg-done lg-done-bad">⚠ 還沒全部完成：有 ' + need + ' 則沒有確定送出' +
         (safeJobs.length ? '<br><button class="lg-btn lg-resend-safe2" style="background:#c62828;border-color:#c62828">重發沒送出的 ' + safeJobs.length + ' 則</button>' : '') +
-        (unsureJobs.length ? '<div style="font-size:13px;font-weight:normal">另有 ' + unsureJobs.length + ' 則不確定，請看最下面。</div>' : '') + '</div>'
-      : '<div class="lg-done lg-done-ok">✔ 全部完成：' + ok + ' 則都已送出' + (ok && verified === ok ? '，也都在聊天室確認了' : '（其中 ' + verified + ' 則已在聊天室確認）') + '</div>';
+        (unsureJobs.length ? '<div style="font-size:13px;font-weight:normal">另有 ' + unsureJobs.length + ' 則不確定，請看最下面。</div>' : '') + taskButtons(true) + '</div>'
+      : '<div class="lg-done lg-done-ok">✔ 全部完成：' + ok + ' 則都已送出' + (ok && verified === ok ? '，也都在聊天室確認了' : '（其中 ' + verified + ' 則已在聊天室確認）') + taskButtons(false) + '</div>';
     if (notSent) banner += '<div class="lg-box lg-warn">另有 ' + notSent + ' 位學生沒有發（找不到 LINE 或沒勾選），請看下面「漏發檢查」。</div>';
     $('.lg-out').innerHTML = banner + box + h + miss + (rs ? '<div style="margin:8px 0">' + rs + '</div>' : '') + '<button class="lg-btn lg-sec lg-copy">複製結果（可貼到 Excel）</button>';
     if (safeJobs.length) $('.lg-resend-safe').onclick = $('.lg-resend-safe2').onclick = function () { doSend(safeJobs); };
     $('.lg-out').firstChild.scrollIntoView({ block: 'nearest' });
+    wireTaskButtons();
     if (unsureJobs.length) $('.lg-resend-unsure').onclick = function () { doSend(unsureJobs); };
     $('.lg-copy').onclick = function () {
       var text = '帳號：' + $('.lg-bot').textContent + '\n' + lines.join('\n');
@@ -2303,8 +2604,10 @@
     '<div class="lg-step lg-s3 lg-locked"><h4>③ 訊息範本</h4>' +
     '<div class="lg-muted">用 [欄位名稱] 代入每位學生的資料。點下面的按鈕可以插入欄位（綠色是工具自動算的）：</div>' +
     '<div class="lg-chips"></div>' +
-    '<textarea class="lg-tpl" style="height:110px"></textarea></div>' +
+    '<textarea class="lg-tpl" style="height:110px"></textarea>' +
+    '<div class="lg-livepv" style="margin-top:8px"></div></div>' +
     '<div class="lg-step lg-s4 lg-locked"><h4>④ 預覽</h4>' +
+    '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：高一數學小考成績" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
     (SEND_ENABLED
       ? '<button class="lg-btn lg-send" disabled title="先按「搜尋預覽」並確認內容" style="background:#c62828;border-color:#c62828">開始發送</button>' +
@@ -2317,6 +2620,35 @@
 
   var $ = function (s) { return panel.querySelector(s); };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+
+  /* 訊息預覽：用「吳政興」當範例（分數等用 Excel 第一位的；還沒放 Excel 就用範例數字），邊改邊顯示家長會收到的樣子 */
+  var SAMPLE_NAME = '吳政興';
+  function renderLivePreview() {
+    var box = panel.querySelector('.lg-livepv'), tpl = panel.querySelector('.lg-tpl').value;
+    if (!box) return;
+    if (!tpl.trim()) { box.innerHTML = ''; return; }
+    var t = state.table, rec = {}, k;
+    if (t && t.records.length) for (k in t.records[0]) rec[k] = t.records[0][k];
+    var nameH = t ? t.nameHeader : '姓名';
+    rec[nameH] = SAMPLE_NAME; rec['姓名'] = SAMPLE_NAME;
+    [['分數', '85'], ['名次', '3'], ['應考人數', '20'], ['平均', '78.5']].forEach(function (d) { if (!rec[d[0]]) rec[d[0]] = d[1]; });
+    rec['班別'] = currentClass() || rec['班別'] || '';
+    var txt = tpl.replace(/\[([^\[\]]+)\]|\{([^{}]+)\}/g, function (all, a, b) { var v = rec[(a || b).trim()]; return v ? v : all; });
+    var extra = '';
+    if (answer('lg-rtq') === 'yes') {
+      var tm = retestTimeText() || '[補考時間]';
+      extra = '\n' + panel.querySelector('.lg-rt-text').value.trim().split('[補考時間]').join(tm).split('{補考時間}').join(tm);
+    }
+    box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + (t && t.records.length ? '，分數等用 Excel 第一位的' : '，分數等是範例數字') + '）</div>' +
+      '<div class="lg-msg" style="max-width:380px">' + esc((txt + extra).replace(/!/g, '！')) + '</div>' +
+      (extra ? '<div class="lg-muted">最後一句只有「需要補考／輔導」的學生才會有。</div>' : '');
+  }
+  setTimeout(function () {
+    panel.addEventListener('input', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
+    panel.addEventListener('change', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
+    panel.addEventListener('click', function (e) { if (e.target.closest('.lg-chip, .lg-tu-pick')) setTimeout(renderLivePreview, 0); });
+    renderLivePreview();
+  }, 0);
   var state = { table: null, items: null, busy: false };
   $('.lg-tpl').value = DEFAULT_TEMPLATE;
 
@@ -2512,6 +2844,7 @@
         var sc = function (r) { var v = parseFloat(r[sk]); return isNaN(v) ? -Infinity : v; };
         sorted.sort(function (a, b) { return sc(b) - sc(a); });
       }
+      if (!$('.lg-task').value.trim()) $('.lg-task').value = (cls || (t.examName || '').replace(/^\d{3,4}\s*/, '') || '') + (/(小考|考試|成績)$/.test(cls || '') ? '' : '小考成績');
       state.items = await preview({ headers: t.headers, nameHeader: t.nameHeader, records: sorted, scoreKey: sk }, tpl, prog); renderPreview();
       $('.lg-prog').textContent = SEND_ENABLED ? '預覽完成。請逐一確認內容與勾選，沒問題再按「開始發送」。' : '預覽完成。';
       if (SEND_ENABLED) $('.lg-send').disabled = false;
@@ -2619,8 +2952,98 @@
     });
   }
 
+
+  /* ========== 任務紀錄、保留待補發（配合官方LINE小幫手的總表；單獨使用時這些功能會自動略過） ========== */
+  var OLHX = window.OLH || null;
+  function remainingJobs() {
+    var out = [];
+    (state.items || []).forEach(function (it) { it.contacts.forEach(function (c) { if (c.resend === 'safe' || c.resend === 'unsure') out.push({ it: it, c: c }); }); });
+    return out;
+  }
+  function updateTask(jobs, isResend) {
+    if (!state.task || !OLHX) return;
+    var okNow = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
+    if (!isResend) { state.task.ok = okNow; state.task.notOk = state.task.total - okNow; }
+    else state.task.resendOk += okNow;
+    state.task.fail = remainingJobs().length;
+    if (!state.task.closed) state.task.status = state.limit ? '保留待補發（已達上限）' : (state.task.fail ? '未完成' : '已發完（待按結束）');
+    OLHX.saveTask(state.task);
+  }
+  /* 把還沒發出去的訊息內容存到這台電腦（關掉分頁、換帳號都還在），之後最上面可以按「繼續發送」 */
+  function keepPending(reason) {
+    var jobs = remainingJobs();
+    if (!OLHX || !state.task) return Promise.resolve(0);
+    if (!jobs.length) { if (state.pendingId) OLHX.removePending(state.pendingId); state.pendingId = null; return Promise.resolve(0); }
+    var p = { id: state.pendingId || state.task.id, tool: 'grade', task: state.task, reason: reason || '', porder: state.porder || '',
+      jobs: jobs.map(function (j) {
+        return { student: j.it.student, row: j.it.row, score: j.it.score, text: j.it.text, key: j.it.key || '', photos: j.it.photos || [],
+          retest: !!j.it.retest, contactId: j.c.contactId, nick: j.c.nick, unsure: j.c.resend === 'unsure',
+          parts: j.c.parts ? j.c.parts.map(function (x) { return { kind: x.kind, i: x.i, ok: !!(x.ok && x.seen) }; }) : null };
+      }) };
+    state.pendingId = p.id;
+    return OLHX.savePending(p).then(function () { return jobs.length; });
+  }
+  /* 從最上面紅色橫幅按「繼續發送」：把保留的工作放回來，接著發 */
+  if (OLHX) OLHX.resumers['grade'] = function (p) {
+    if (state.busy) { alert('目前正在發送中，請等這一批發完。'); return; }
+    var byKey = {}, items = [], jobs = [];
+    p.jobs.forEach(function (j) {
+      var k = j.student + '|' + j.text + '|' + j.key, it = byKey[k];
+      if (!it) { it = byKey[k] = { student: j.student, row: j.row, score: j.score, text: j.text, key: j.key, photos: j.photos, retest: j.retest, contacts: [], warn: [], unknown: [], missing: [], block: '' }; items.push(it); }
+      var c = { contactId: j.contactId, nick: j.nick, checked: true, note: j.unsure ? '上次不確定有沒有送出' : '', result: '', resend: '',
+        parts: j.parts ? j.parts.map(function (x) { return { kind: x.kind, i: x.i, ok: x.ok, seen: x.ok }; }) : null };
+      it.contacts.push(c); jobs.push({ it: it, c: c });
+    });
+    state.items = items; state.task = p.task; state.task.closed = false; state.pendingId = p.id; if (p.porder) state.porder = p.porder;
+    $('.lg-task').value = p.task.name;
+    panel.querySelectorAll('.lg-locked').forEach(function (s) { s.classList.remove('lg-locked'); });
+    $('.lg-out').innerHTML = '<div class="lg-box" style="border:2px solid #c62828;background:#fff5f5"><b>繼續上次的工作：「' + esc(p.task.name) + '」</b>（' + esc(p.task.date + ' ' + p.task.time) + '）<br>還有 <b>' + jobs.length + '</b> 則沒發出去。按下面的確認就會接著發。</div>';
+    doSend(jobs, true);
+  };
+  function taskButtons(need) {
+    if (!OLHX || !state.task) return '';
+    if (state.task.closed) return '<div class="lg-muted" style="margin-top:6px">✔ 這個任務已結束，已記到發送紀錄總表（' + esc(state.task.status) + '）。</div>';
+    return need
+      ? '<br><button class="lg-btn lg-sec lg-keep" style="color:#c62828;border-color:#c62828">先結束任務（保留未成功的訊息）</button>'
+      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">✔ 結束此階段任務</button>';
+  }
+  function wireTaskButtons() {
+    var end = $('.lg-endtask'), keep = $('.lg-keep');
+    if (end) end.onclick = function () {
+      state.task.status = '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
+      if (state.pendingId) { OLHX.removePending(state.pendingId); state.pendingId = null; }
+      renderSendResult();
+    };
+    if (keep) keep.onclick = function () {
+      var n = remainingJobs().length;
+      var box = document.createElement('div');
+      box.className = 'lg-box'; box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin-top:6px';
+      box.innerHTML = '<b>將未成功發出去的 ' + n + ' 則訊息內容，先保留至系統內。</b><br>之後打開小幫手，最上面會有「▶ 繼續發送」可以補發。<br>' +
+        '<button class="lg-btn lg-keep-ok" style="background:#c62828;border-color:#c62828">確定保留並結束任務</button><button class="lg-btn lg-sec lg-keep-no">取消</button>';
+      keep.parentNode.insertBefore(box, keep.nextSibling); keep.style.display = 'none';
+      box.querySelector('.lg-keep-no').onclick = function () { box.parentNode.removeChild(box); keep.style.display = ''; };
+      box.querySelector('.lg-keep-ok').onclick = function () {
+        keepPending('先結束任務').then(function () {
+          state.task.status = '保留待補發'; state.task.closed = true; OLHX.saveTask(state.task); renderSendResult();
+        });
+      };
+    };
+  }
+  /* 已達 LINE 短時間上限：剩下的自動保留，跳出說明 */
+  function showLimitBox(sent, left) {
+    var box = document.createElement('div');
+    box.className = 'lg-box'; box.style.cssText = 'border:3px solid #c62828;background:#ffebee;margin:8px 0;font-size:15px';
+    box.innerHTML = '<b style="font-size:17px;color:#b71c1c">⚠ 已達短時間內可發送的訊息數量上限</b><br>' +
+      '這次已發出 <b>' + sent + '</b> 則，剩下 <b>' + left + '</b> 則的內容已保留在這台電腦。<br>' +
+      '換個使用者登入即可恢復發訊息功能：切換帳號後重新打開小幫手，最上面按「<b>▶ 繼續發送</b>」就會接著發。<br>' +
+      '<button class="lg-btn lg-sec lg-limit-x">知道了</button>';
+    $('.lg-out').insertBefore(box, $('.lg-out').firstChild);
+    box.querySelector('.lg-limit-x').onclick = function () { box.parentNode.removeChild(box); };
+    box.scrollIntoView({ block: 'center' });
+  }
+
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
-  async function doSend(resendJobs) {
+  async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
     var jobs = [];
     if (resendJobs) jobs = resendJobs;
@@ -2633,9 +3056,20 @@
     var nStudents = Object.keys(names).length;
     var nRt = 0, nTu = 0; Object.keys(names).length && jobs.forEach(function (j) { if (j.it.retest) names[j.it.student] |= 2; if (j.it.tutor) names[j.it.student] |= 4; });
     Object.keys(names).forEach(function (k) { if (names[k] & 2) nRt++; if (names[k] & 4) nTu++; });
-    var ans = await askCount('帳號：' + $('.lg-bot').textContent + '\n即將' + (resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
+    var hourWarn = '';
+    if (OLHX) {
+      var hc = OLHX.hourCount();
+      if (hc + jobs.length > OLHX.HOUR_LIMIT) hourWarn = '⚠ 提醒：這台電腦 1 小時內已發 ' + hc + ' 個聊天室，這次再發 ' + jobs.length + ' 個，可能超過 LINE「1 小時 200 個聊天室」的上限。' +
+        '發到一半被擋的話，剩下的會自動保留，之後可以接著發。\n\n';
+    }
+    var ans = await askCount(hourWarn + '帳號：' + $('.lg-bot').textContent + '\n即將' + (resuming ? '繼續發送' : resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
       '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
     if (!ans) return;
+    if (OLHX && (!resendJobs || !state.task || state.task.closed)) {
+      if (!resendJobs) { state.task = OLHX.newTask('成績', $('.lg-task').value.trim() || '（未命名）', jobs.length); state.pendingId = null; }
+      else if (state.task) state.task.closed = false;
+    }
+    state.limit = false;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
@@ -2661,10 +3095,11 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];
+    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000];
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
     for (var i = 0; i < jobs.length; i++) {
       var job = jobs[i], it = job.it, c = job.c;
+      if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
       state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
@@ -2680,13 +3115,13 @@
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
-          state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試（第 ' + (tries + 1) + ' 次）…');
+          state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
           await sleep(WAITS[tries]); tries++;
           c.sendId = newSendId(); c.sentAt = Date.now();
           st = await sendText(c.contactId, it.text, c.sendId);
         }
-        if (st >= 200 && st < 300) { c.result = '成功'; markSent(c.contactId, it.text); done++; }
-        else if (st === 429) { c.result = '失敗：LINE 暫時擋下（沒發），可以按下面「重發」'; c.resend = 'safe'; }
+        if (st >= 200 && st < 300) { c.result = '成功'; markSent(c.contactId, it.text); done++; if (OLHX) OLHX.noteSent(c.contactId); }
+        else if (st === 429) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; c.sendId = null; state.limit = true; }
         else { c.result = '失敗（代碼 ' + st + '），請到聊天室確認有沒有送出'; c.resend = 'unsure'; }
       } catch (e) {
         c.result = '失敗（連線錯誤），請到聊天室確認有沒有送出'; c.resend = 'unsure';
@@ -2699,10 +3134,15 @@
     await verifySent(jobs);
     $('.lg-preview').disabled = false;
     state.busy = false;
+    updateTask(jobs, !!resendJobs);
+    var limitHit = state.limit && OLHX;
+    if (limitHit) { await keepPending('已達短時間內可發送的訊息數量上限'); state.task.status = '保留待補發（已達上限）'; state.task.closed = true; OLHX.saveTask(state.task); }
     var okN = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
     var vN = jobs.filter(function (j) { return j.c.verify === 'ok'; }).length;
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
+    if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
+    else if (resuming && OLHX) keepPending(state.task.status);
   }
 
   /* 發完之後到每個聊天室確認真的有這則訊息：
@@ -2781,12 +3221,13 @@
     var banner = need
       ? '<div class="lg-done lg-done-bad">⚠ 還沒全部完成：有 ' + need + ' 則沒有確定送出' +
         (safeJobs.length ? '<br><button class="lg-btn lg-resend-safe2" style="background:#c62828;border-color:#c62828">重發沒送出的 ' + safeJobs.length + ' 則</button>' : '') +
-        (unsureJobs.length ? '<div style="font-size:13px;font-weight:normal">另有 ' + unsureJobs.length + ' 則不確定，請看最下面。</div>' : '') + '</div>'
-      : '<div class="lg-done lg-done-ok">✔ 全部完成：' + ok + ' 則都已送出' + (ok && verified === ok ? '，也都在聊天室確認了' : '（其中 ' + verified + ' 則已在聊天室確認）') + '</div>';
+        (unsureJobs.length ? '<div style="font-size:13px;font-weight:normal">另有 ' + unsureJobs.length + ' 則不確定，請看最下面。</div>' : '') + taskButtons(true) + '</div>'
+      : '<div class="lg-done lg-done-ok">✔ 全部完成：' + ok + ' 則都已送出' + (ok && verified === ok ? '，也都在聊天室確認了' : '（其中 ' + verified + ' 則已在聊天室確認）') + taskButtons(false) + '</div>';
     if (notSent) banner += '<div class="lg-box lg-warn">另有 ' + notSent + ' 位學生沒有發（找不到 LINE 或沒勾選），請看下面「漏發檢查」。</div>';
     $('.lg-out').innerHTML = banner + box + h + miss + (rs ? '<div style="margin:8px 0">' + rs + '</div>' : '') + '<button class="lg-btn lg-sec lg-copy">複製結果（可貼到 Excel）</button>';
     if (safeJobs.length) $('.lg-resend-safe').onclick = $('.lg-resend-safe2').onclick = function () { doSend(safeJobs); };
     $('.lg-out').firstChild.scrollIntoView({ block: 'nearest' });
+    wireTaskButtons();
     if (unsureJobs.length) $('.lg-resend-unsure').onclick = function () { doSend(unsureJobs); };
     $('.lg-copy').onclick = function () {
       var text = '帳號：' + $('.lg-bot').textContent + '\n' + lines.join('\n');
@@ -2801,4 +3242,5 @@
 
   var first = load(TAB_KEY);
   showTab(TABS.some(function (t) { return t.key === first; }) ? first : TABS[0].key);
+  refreshPending(); OLH.sync();
 })();
