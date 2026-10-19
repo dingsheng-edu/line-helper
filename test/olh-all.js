@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.18', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.19', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1277,11 +1277,11 @@
      三個帳號共用，所以不寫補習班名稱）。要改範本文字就改這裡，改完重新產生、發布。
      [姓名] 會換成名單上的學生；其他 [方括號] 會在視窗裡出現填空欄（名稱有「日期」的用行事曆選）。 */
   var TEMPLATES = [
-    { name: '1 作業沒寫', text: '📌 作業未完成｜[姓名]\n📚 [班別]\n✅ 請家長協助：\n1. 提醒孩子今晚完成作業\n2. 下次上課帶來補交\n有問題直接回覆這則訊息就可以，謝謝！' },
-    { name: '2 輔導沒到', text: '📌 輔導未到班｜[姓名]\n📚 [班別]\n✅ 接下來請：\n1. 到櫃台領取今天的考卷\n2. 或回覆這則訊息，我們傳電子檔給您' },
-    { name: '3 缺課', text: '📌 缺課通知｜[姓名]\n🗓 [缺課日期]　[班別]\n✅ 請協助：提醒孩子完成線上補課' },
+    { name: '1 作業沒寫', text: '📌 作業未完成｜[姓名]同學\n📚 [班別]\n✅ 請家長協助：\n1. 提醒孩子盡快完成作業\n2. 下次上課帶來檢查及補交。' },
+    { name: '2 輔導沒到', text: '📌 輔導未到班｜[姓名]\n📚 [班別]\n✅ 接下來請爸爸、媽媽協助：\n1. 到櫃台領取今天的考卷，回家多加練習。\n2. 或回覆這則訊息，我們傳電子檔給您。' },
+    { name: '3 缺課', text: '📌 缺課通知｜[姓名]\n🗓 [缺課日期]　[班別]\n✅ 請協助：提醒孩子自行到classroom完成線上補課' },
     { name: '4 上課提醒', text: '⏰ 上課提醒\n📚 [班別]\n🗓 [日期]　[時間]\n🎒 記得帶講義\n照常上課，請準時到班，謝謝！' },
-    { name: '5 調課通知', text: '🔄 調課通知｜[班別]\n❌ 原本：[日期]　[時間]\n✅ 改為：[新日期]　[新時間]\n新時間不方便的話，直接回覆這則訊息，我們再協助安排。' },
+    { name: '5 調課通知', text: '🔄 調課通知｜[班別]\n❌ 原本：[日期]　[時間]\n✅ 改為：[新日期]　[新時間]' },
     { name: '5-2 停課提醒', text: '🚫 停課提醒\n📚 [班別]\n🗓 [日期] 停課一次\n當天不用到班，之後照原課表上課，謝謝！' }
   ];
 
@@ -1584,6 +1584,7 @@
     '<div class="lg-chips"></div>' +
     '<textarea class="lg-tpl" style="height:130px"></textarea>' +
     '<div class="lg-fill"></div>' +
+    '<div class="lg-livepv" style="display:none;margin-top:8px"></div>' +
     '<div class="lg-photobar" style="margin-top:8px;padding:8px 10px;border:1px dashed #ce93d8;border-radius:8px;background:#fcf7fd">' +
     '📷 <b>附加照片</b>（可以不加）：<input type="file" class="lg-photo" accept="image/jpeg,image/png" multiple>' +
     '<div class="lg-muted">最多 5 張，每張 10MB 以內（jpg、png）。順序：' +
@@ -1640,6 +1641,29 @@
     return (+p[1]) + '/' + (+p[2]) + '(' + '日一二三四五六'.charAt(d.getDay()) + ')';
   }
   function fillValue(k) { var v = (state.fill[k] || '').trim(); return k.indexOf('日期') >= 0 ? fmtDate(v) : v; }
+
+  /* 訊息預覽：用「吳政興」當範例，邊打字邊顯示家長會收到的樣子（還沒填的空格保留 [方括號]） */
+  var SAMPLE_NAME = '吳政興';
+  function renderLivePreview() {
+    var box = $('.lg-livepv'); if (!box) return;
+    var tpl = $('.lg-tpl').value, each = mode() === 'each';
+    if (!tpl.trim() && !(state.photos && state.photos.length && !each)) { box.style.display = 'none'; return; }
+    var nameH = state.table ? state.table.nameHeader : '姓名';
+    var txt = tpl.replace(/\[([^\[\]]+)\]|\{([^{}]+)\}/g, function (all, a, b) {
+      var k = (a || b).trim();
+      if (k === '姓名' || k === nameH) return SAMPLE_NAME;
+      if (each && state.table && k === state.table.msgHeader) return '（這一位在 Excel「' + k + '」欄的內容）';
+      if (Object.prototype.hasOwnProperty.call(state.fill, k) && fillValue(k)) return fillValue(k);
+      return all;
+    }).replace(/!/g, '！');
+    var nPh = !each && state.photos ? state.photos.length : 0;
+    box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + '）</div>' +
+      '<div class="lg-msg" style="max-width:360px">' + (txt.trim() ? esc(txt) : '<span class="lg-muted">（沒有文字，只發照片）</span>') +
+      (nPh ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + state.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>';
+    box.style.display = 'block';
+  }
+  panel.addEventListener('input', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
+  panel.addEventListener('change', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
   var lastKeys = '';
   function renderFill(force) {
     var keys = fillKeys(), sig = keys.join('|');
@@ -1742,7 +1766,7 @@
       b.onclick = function () { state.photos.splice(+this.dataset.k, 1); renderThumbs(); photosChanged(); };
     });
   }
-  function photosChanged() { state.items = null; $('.lg-out').innerHTML = ''; $('.lg-send').disabled = true; }
+  function photosChanged() { state.items = null; $('.lg-out').innerHTML = ''; $('.lg-send').disabled = true; renderLivePreview(); }
   $('.lg-photo').onchange = function () {
     var bad = [];
     Array.prototype.forEach.call(this.files, function (f) {
@@ -2586,7 +2610,8 @@
     '<div class="lg-step lg-s3 lg-locked"><h4>③ 訊息範本</h4>' +
     '<div class="lg-muted">用 [欄位名稱] 代入每位學生的資料。點下面的按鈕可以插入欄位（綠色是工具自動算的）：</div>' +
     '<div class="lg-chips"></div>' +
-    '<textarea class="lg-tpl" style="height:110px"></textarea></div>' +
+    '<textarea class="lg-tpl" style="height:110px"></textarea>' +
+    '<div class="lg-livepv" style="margin-top:8px"></div></div>' +
     '<div class="lg-step lg-s4 lg-locked"><h4>④ 預覽</h4>' +
     '<div style="margin-bottom:6px">任務名稱（記在發送紀錄總表）：<input type="text" class="lg-task" placeholder="例如：高一數學小考成績" style="width:58%;padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></div>' +
     '<button class="lg-btn lg-preview">搜尋預覽</button>' +
@@ -2601,6 +2626,35 @@
 
   var $ = function (s) { return panel.querySelector(s); };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+
+  /* 訊息預覽：用「吳政興」當範例（分數等用 Excel 第一位的；還沒放 Excel 就用範例數字），邊改邊顯示家長會收到的樣子 */
+  var SAMPLE_NAME = '吳政興';
+  function renderLivePreview() {
+    var box = panel.querySelector('.lg-livepv'), tpl = panel.querySelector('.lg-tpl').value;
+    if (!box) return;
+    if (!tpl.trim()) { box.innerHTML = ''; return; }
+    var t = state.table, rec = {}, k;
+    if (t && t.records.length) for (k in t.records[0]) rec[k] = t.records[0][k];
+    var nameH = t ? t.nameHeader : '姓名';
+    rec[nameH] = SAMPLE_NAME; rec['姓名'] = SAMPLE_NAME;
+    [['分數', '85'], ['名次', '3'], ['應考人數', '20'], ['平均', '78.5']].forEach(function (d) { if (!rec[d[0]]) rec[d[0]] = d[1]; });
+    rec['班別'] = currentClass() || rec['班別'] || '';
+    var txt = tpl.replace(/\[([^\[\]]+)\]|\{([^{}]+)\}/g, function (all, a, b) { var v = rec[(a || b).trim()]; return v ? v : all; });
+    var extra = '';
+    if (answer('lg-rtq') === 'yes') {
+      var tm = retestTimeText() || '[補考時間]';
+      extra = '\n' + panel.querySelector('.lg-rt-text').value.trim().split('[補考時間]').join(tm).split('{補考時間}').join(tm);
+    }
+    box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + (t && t.records.length ? '，分數等用 Excel 第一位的' : '，分數等是範例數字') + '）</div>' +
+      '<div class="lg-msg" style="max-width:380px">' + esc((txt + extra).replace(/!/g, '！')) + '</div>' +
+      (extra ? '<div class="lg-muted">最後一句只有「需要補考／輔導」的學生才會有。</div>' : '');
+  }
+  setTimeout(function () {
+    panel.addEventListener('input', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
+    panel.addEventListener('change', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
+    panel.addEventListener('click', function (e) { if (e.target.closest('.lg-chip, .lg-tu-pick')) setTimeout(renderLivePreview, 0); });
+    renderLivePreview();
+  }, 0);
   var state = { table: null, items: null, busy: false };
   $('.lg-tpl').value = DEFAULT_TEMPLATE;
 
