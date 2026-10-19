@@ -1,6 +1,7 @@
 /*
   官方LINE小幫手：每日發送報告
-  在 chat.line.biz（高群）頁面執行。先設定 window.__olhReport = { url, key, to: [聯絡人 id…], date?: 'YYYY/MM/DD', dryRun?: true }。
+  在 chat.line.biz（高群）頁面執行。先設定 window.__olhReport = { url, key, to: [聯絡人 id…], date?: 'YYYY/MM/DD', dryRun?: true, courses?: [...] }。
+  courses：今日課程（today_courses.py 從課表算出來的 JSON），報告會多一張「今日課程｜小考成績 已發送／未發送」表。
   1. 從 Google 試算表讀當天的發送紀錄（只有總數，沒有家長資料）
   2. 畫一張重點圖（畫在網頁裡，不用存檔）
   3. 用聊天室發給指定的人：先文字，再圖；發完到聊天室確認送達
@@ -32,6 +33,15 @@
     var pending = tasks.filter(function (t) { return t.fail > 0; });
     var byType = {}; tasks.forEach(function (t) { byType[t.type] = (byType[t.type] || 0) + 1; });
 
+    /* 今日課程的小考成績有沒有發：cfg.courses 由 today_courses.py 從課表算出來 [{label, cls}]。
+       當天「成績」任務的名稱裡有這個班別（或課名）就算已發送；有未成功的算「未發完」。 */
+    var courses = (cfg.courses || []).map(function (c) {
+      var keys = [c.cls, c.label].filter(Boolean);
+      var hit = tasks.filter(function (t) { return t.type === '成績' && keys.some(function (k) { return (t.name || '').indexOf(k) >= 0; }); });
+      var st = !hit.length ? '未發送' : (hit.some(function (t) { return t.fail > 0; }) ? '未發完' : '已發送');
+      return { label: c.label, status: st };
+    });
+
     /* 2. 文字重點 */
     var text = '📊 官方LINE小幫手 每日發送報告｜' + dateLabel + '\n';
     if (!tasks.length) text += '今天沒有發送紀錄。';
@@ -42,20 +52,29 @@
         ? '⚠ 還有 ' + sum.fail + ' 則沒發出去：\n' + pending.map(function (t) { return '・' + t.name + '（' + t.bot + '，' + t.fail + ' 則）'; }).join('\n') + '\n請到小幫手最上面按「▶ 繼續發送」補發。'
         : '✅ 全部都已送達。';
     }
+    if (courses.length) {
+      var ICON = { '已發送': '✅', '未發完': '⚠', '未發送': '❌' };
+      text += '\n\n📝 今日課程小考成績：\n' + courses.map(function (c) { return ICON[c.status] + ' ' + c.label + '：' + c.status; }).join('\n');
+    }
     if (cfg.testLabel) text = '【測試，請忽略：以下是假資料】\n' + text;
     res.text = text;
 
     /* 3. 重點圖（沒有紀錄就不畫） */
     var blob = null;
-    if (tasks.length) {
+    if (tasks.length || courses.length) {
       res.step = 'draw';
-      var W = 1080, rowH = 64, list = tasks.slice(0, 12), H = 430 + list.length * rowH + (tasks.length > 12 ? 40 : 0) + 70;
+      var COLS = 4, cellH = 64, blocks = Math.ceil(courses.length / COLS);
+      var tblH = courses.length ? 70 + blocks * (cellH * 2 + 24) : 0;
+      var W = 1080, rowH = 64, list = tasks.slice(0, 12);
+      var H = (tasks.length ? 430 + list.length * rowH + (tasks.length > 12 ? 40 : 0) + 70 : 160) + tblH;
       var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       var g = cv.getContext('2d'), F = '"Microsoft JhengHei","PingFang TC",sans-serif';
       g.fillStyle = '#f5f7f8'; g.fillRect(0, 0, W, H);
       g.fillStyle = '#06c755'; g.fillRect(0, 0, W, 130);
       g.fillStyle = '#fff'; g.font = 'bold 46px ' + F; g.fillText('每日發送報告' + (cfg.testLabel ? '（測試・假資料）' : ''), 50, 75);
       g.font = '28px ' + F; g.fillText(dateLabel + '　官方LINE小幫手', 52, 115);
+      var ty = 160;   /* 小考成績表格從這裡開始畫 */
+      if (tasks.length) {
       var cards = [['任務', tasks.length + ' 個', '#1565c0'], ['訊息', sum.total + ' 則', '#6a1b9a'], ['成功率', rate + '%', '#2e7d32'], ['未成功', sum.fail + ' 則', sum.fail ? '#c62828' : '#2e7d32']];
       cards.forEach(function (c, i) {
         var x = 40 + i * 255, y = 160;
@@ -83,6 +102,35 @@
       g.fillStyle = '#777'; g.font = '22px ' + F;
       if (tasks.length > 12) { g.fillText('另有 ' + (tasks.length - 12) + ' 個任務，請看試算表。', 40, fy); fy += 40; }
       g.fillText(pending.length ? '⚠ 未成功的請到小幫手最上面按「▶ 繼續發送」補發。' : '✅ 今天的訊息都已送達。', 40, fy + 10);
+      ty = fy + 50;
+      }
+      /* 今日課程 × 小考成績 表格（像：今日課程｜國一英文｜國二數學…／小考成績｜已發送｜未發送…），一列最多 4 班 */
+      if (courses.length) {
+        g.fillStyle = '#222'; g.font = 'bold 32px ' + F; g.fillText('今日課程小考成績', 40, ty + 40);
+        var COLOR = { '已發送': '#2e7d32', '未發完': '#ef6c00', '未發送': '#c62828' };
+        var headW = 170, cw = Math.floor((W - 80 - headW) / COLS);
+        for (var b = 0; b < blocks; b++) {
+          var y0 = ty + 70 + b * (cellH * 2 + 24), part = courses.slice(b * COLS, b * COLS + COLS);
+          var cellsW = headW + part.length * cw;
+          g.fillStyle = '#fff'; g.fillRect(40, y0, cellsW, cellH * 2);
+          g.fillStyle = '#e8f5e9'; g.fillRect(40, y0, headW, cellH * 2);
+          g.strokeStyle = '#bbb'; g.lineWidth = 2;
+          g.strokeRect(40, y0, cellsW, cellH * 2);
+          g.beginPath(); g.moveTo(40, y0 + cellH); g.lineTo(40 + cellsW, y0 + cellH);
+          for (var cI = 0; cI <= part.length; cI++) { var x = 40 + headW + cI * cw; g.moveTo(x, y0); g.lineTo(x, y0 + cellH * 2); }
+          g.stroke();
+          g.fillStyle = '#222'; g.font = 'bold 26px ' + F;
+          g.fillText('今日課程', 58, y0 + 42); g.fillText('小考成績', 58, y0 + cellH + 42);
+          part.forEach(function (c, i) {
+            var x = 40 + headW + i * cw, lab = c.label, fs = 26;
+            g.font = fs + 'px ' + F;
+            while (fs > 16 && g.measureText(lab).width > cw - 16) { fs -= 2; g.font = fs + 'px ' + F; }
+            g.fillStyle = '#222'; g.fillText(lab, x + (cw - g.measureText(lab).width) / 2, y0 + 42);
+            g.fillStyle = COLOR[c.status]; g.font = 'bold 26px ' + F;
+            g.fillText(c.status, x + (cw - g.measureText(c.status).width) / 2, y0 + cellH + 42);
+          });
+        }
+      }
       blob = await new Promise(function (r) { cv.toBlob(r, 'image/png'); });
       res.imageBytes = blob.size;
       if (cfg.dryRun) {
