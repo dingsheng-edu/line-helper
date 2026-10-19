@@ -42,6 +42,7 @@
         ? '⚠ 還有 ' + sum.fail + ' 則沒發出去：\n' + pending.map(function (t) { return '・' + t.name + '（' + t.bot + '，' + t.fail + ' 則）'; }).join('\n') + '\n請到小幫手最上面按「▶ 繼續發送」補發。'
         : '✅ 全部都已送達。';
     }
+    if (cfg.testLabel) text = '【測試，請忽略：以下是假資料】\n' + text;
     res.text = text;
 
     /* 3. 重點圖（沒有紀錄就不畫） */
@@ -53,7 +54,7 @@
       var g = cv.getContext('2d'), F = '"Microsoft JhengHei","PingFang TC",sans-serif';
       g.fillStyle = '#f5f7f8'; g.fillRect(0, 0, W, H);
       g.fillStyle = '#06c755'; g.fillRect(0, 0, W, 130);
-      g.fillStyle = '#fff'; g.font = 'bold 46px ' + F; g.fillText('每日發送報告', 50, 75);
+      g.fillStyle = '#fff'; g.font = 'bold 46px ' + F; g.fillText('每日發送報告' + (cfg.testLabel ? '（測試・假資料）' : ''), 50, 75);
       g.font = '28px ' + F; g.fillText(dateLabel + '　官方LINE小幫手', 52, 115);
       var cards = [['任務', tasks.length + ' 個', '#1565c0'], ['訊息', sum.total + ' 則', '#6a1b9a'], ['成功率', rate + '%', '#2e7d32'], ['未成功', sum.fail + ' 則', sum.fail ? '#c62828' : '#2e7d32']];
       cards.forEach(function (c, i) {
