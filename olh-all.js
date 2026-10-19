@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.22', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.28', VERSION_DATE = '2026/10/19';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -2561,7 +2561,7 @@
   var TUTOR_SENTENCE = '請同學於[輔導時間]準時到班參加輔導。';
 
   /* 需要補考的學生，訊息最後自動加上這一句（視窗裡可以改；[補考時間] 會換成選的日期與時間，例如 10/24(六)下午15:00-17:00） */
-  var RETEST_SENTENCE = '請成績低於班平均的同學，務必要於[補考時間]，到班進行補考及個別輔導。';
+  var RETEST_SENTENCE = '請成績低於[成績標準]的同學，務必要於[補考時間]，到班進行補考及個別輔導。';
   var DEFAULT_TEMPLATE ='親愛的家長您好：貴子弟[姓名]於今日[班別]小考成績為[分數]分，名次為第[名次]名，應考人[應考人數]位。班平均為[平均]分。特此通知您。';
 
   var panel = document.createElement('div');
@@ -2597,7 +2597,7 @@
     '<label style="cursor:pointer;margin-right:10px"><input type="radio" name="lg-rt" value="below"> 分數低於 ' +
     '<input type="number" class="lg-retest-min" value="60" style="width:56px;padding:2px;border:1px solid #ccc;border-radius:6px"> 分</label>' +
     '<label style="cursor:pointer"><input type="radio" name="lg-rt" value="all"> 全部學生</label></div>' +
-    '<div style="margin-top:8px">補考／輔導那一句（會加在需要的學生訊息最後，可以改）：</div>' +
+    '<div style="margin-top:8px">補考／輔導那一句（會加在需要的學生訊息最後，可以改；<b>[成績標準]</b> 會跟著上面的對象變成「班平均」或「60分」）：</div>' +
     '<textarea class="lg-rt-text" style="height:52px;margin-top:2px"></textarea>' +
     '</div>' +
     '</div>' +
@@ -2637,7 +2637,7 @@
     var extra = '';
     if (answer('lg-rtq') === 'yes') {
       var tm = retestTimeText() || '[補考時間]';
-      extra = '\n' + panel.querySelector('.lg-rt-text').value.trim().split('[補考時間]').join(tm).split('{補考時間}').join(tm);
+      extra = '\n' + fillRt(panel.querySelector('.lg-rt-text').value.trim(), tm);
     }
     box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + (t && t.records.length ? '，分數等用 Excel 第一位的' : '，分數等是範例數字') + '）</div>' +
       '<div class="lg-msg" style="max-width:380px">' + esc((txt + extra).replace(/!/g, '！')) + '</div>' +
@@ -2681,6 +2681,23 @@
     return guess + '（選單裡沒有，放在「其他」）';
   }
   $('.lg-rt-text').value = RETEST_SENTENCE;
+
+  /* 補考／輔導那一句裡的 [成績標準]：跟著上面的「對象」——低於班平均 →「班平均」，分數低於 60 分 →「60分」；
+     選「全部學生」時「成績低於[成績標準]的同學」會變成「全部同學」。[補考時間] 換成選的日期與時間。 */
+  function rtStandard() {
+    var r = panel.querySelector('input[name=lg-rt]:checked'), mode = r ? r.value : 'avg';
+    if (mode === 'below') { var n = $('.lg-retest-min').value.trim(); return n ? n + '分' : '[成績標準]'; }
+    return mode === 'all' ? '' : '班平均';
+  }
+  function fillRt(text, tm) {
+    var r = panel.querySelector('input[name=lg-rt]:checked');
+    if (r && r.value === 'all') text = text.split('成績低於[成績標準]的同學').join('全部同學').split('成績低於{成績標準}的同學').join('全部同學');
+    var sd = rtStandard();
+    return text.split('[補考時間]').join(tm).split('{補考時間}').join(tm).split('[成績標準]').join(sd).split('{成績標準}').join(sd);
+  }
+  $('.lg-retest-min').addEventListener('input', function () {
+    var b = panel.querySelector('input[name=lg-rt][value=below]'); if (b && !b.checked) b.checked = true;   /* 改分數就自動選「分數低於」 */
+  });
 
   /* 把選的日期、時間組成「10/24(六)下午15:00-17:00」；沒選好就回傳空字串 */
   function retestTimeText() {
@@ -2833,7 +2850,7 @@
     t.records.forEach(function (r) {
       var score = sk ? parseFloat(r[sk]) : NaN;
       var need = retest && (rtMode === 'all' || (!isNaN(score) && score < (rtMode === 'avg' ? avg : rtMin)));
-      r.__retest = need ? rtText.split('[補考時間]').join(rtTime).split('{補考時間}').join(rtTime) : '';
+      r.__retest = need ? fillRt(rtText, rtTime) : '';
       r.__tutor = '';
     });
     state.busy = true; this.disabled = true; $('.lg-send').disabled = true; $('.lg-out').innerHTML = '';
