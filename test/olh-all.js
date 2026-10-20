@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.31', VERSION_DATE = '2026/10/20';
+  var VERSION = '1.32', VERSION_DATE = '2026/10/20';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -3341,7 +3341,7 @@
     P + ' td input.ll-ed{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:4px;font-size:13px;background:transparent}' +
     P + ' td input.ll-ed:hover,' + P + ' td input.ll-ed:focus{border-color:#ccc;background:#fff}' +
     P + ' .ll-kind{display:inline-block;border-radius:10px;padding:0 7px;font-size:12px;color:#fff;background:#2e7d32}' +
-    P + ' .ll-kind.k-遲到{background:#ef6c00}' + P + ' .ll-kind.k-早退{background:#6a1b9a}' +
+    P + ' .ll-kind.k-遲到{background:#ef6c00}' + P + ' .ll-kind.k-早退{background:#6a1b9a}' + P + ' .ll-kind.k-線上{background:#1565c0}' +
     P + ' .ll-msg{white-space:pre-wrap;background:#f1f8e9;border-radius:6px;padding:4px 6px;margin-top:3px;font-size:12px;color:#33691e}' +
     P + ' .ll-x{cursor:pointer;border:none;background:none;color:#c62828;font-size:15px}';
 
@@ -3360,7 +3360,7 @@
     '<label style="cursor:pointer"><input type="checkbox" class="ll-onlyopen"> 只看還沒確認的</label>　' +
     '<button class="ll-btn sec ll-xlsx">⬇ 下載 Excel</button><button class="ll-btn sec ll-addbtn">＋ 手動新增</button></div>' +
     '<div class="ll-add ll-box" style="display:none">日期 <input type="date" class="ll-a-date"> 學生 <input type="text" class="ll-a-stu" style="width:80px"> ' +
-    '班別 <input type="text" class="ll-a-cls" style="width:90px"> <select class="ll-a-kind"><option>請假</option><option>遲到</option><option>早退</option></select><br>' +
+    '班別 <input type="text" class="ll-a-cls" style="width:90px"> <select class="ll-a-kind"><option>請假</option><option>遲到</option><option>早退</option><option>線上</option></select><br>' +
     '原因 <input type="text" class="ll-a-rsn" style="width:140px"> 備註 <input type="text" class="ll-a-note" style="width:160px"> <button class="ll-btn ll-a-save">新增</button></div>' +
     '<div class="ll-st ll-muted"></div>' +
     '<div class="ll-out"></div>' +
@@ -3406,7 +3406,30 @@
       state.rows = j.leaves; state.from = f; state.to = to;
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
       draw();
+      guessNames();
     } catch (e) { $('.ll-st').textContent = ''; $('.ll-out').innerHTML = '<div class="ll-err">' + esc(e.message) + '</div>'; }
+  }
+
+  /* 沒寫學生姓名的：用家長的 LINE 名稱在後台搜尋聯絡人，把後台名稱（例如「118慈文林文琪媽媽」）送去和學生名單比對。
+     只在高群帳號做（請假只有高群的機器人在記）；只讀聯絡人，不會打開聊天室。每筆只試一次。 */
+  var GAOQUN = 'U6e93b8aa5105cd6744edb4c7dc78923e', tried = {};
+  async function guessNames() {
+    if ((location.pathname.split('/')[1] || '') !== GAOQUN) return;
+    var todo = state.rows.filter(function (r) { return !r.student && r.parent && !tried[r.id]; });
+    var changed = false;
+    for (var i = 0; i < todo.length; i++) {
+      var r = todo[i]; tried[r.id] = 1;
+      try {
+        var res = await fetch('/api/v2/bots/' + GAOQUN + '/contacts?query=' + encodeURIComponent(r.parent) + '&limit=50', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+        if (!res.ok) continue;
+        var nicks = ((await res.json()).list || []).filter(function (c) { var p = c.profile || {}; return p.name === r.parent && p.nickname; })
+          .map(function (c) { return c.profile.nickname; });
+        if (!nicks.length) continue;
+        var g = await srv('/leaves/' + r.id + '/guess', { nicknames: nicks });
+        if (g.student || g.note) { r.student = g.student || ''; if (g.note && (r.note || '').indexOf(g.note) < 0) r.note = ((r.note || '') + ' ' + g.note).trim(); changed = true; }
+      } catch (e) { }
+    }
+    if (changed) draw();
   }
 
   function draw() {
