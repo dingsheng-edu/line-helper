@@ -34,11 +34,26 @@
     var byType = {}; tasks.forEach(function (t) { byType[t.type] = (byType[t.type] || 0) + 1; });
 
     /* 今日課程的小考成績有沒有發：cfg.courses 由 today_courses.py 從課表算出來 [{label, cls}]。
-       當天「成績」任務的名稱裡有這個班別（或課名）就算已發送；有未成功的算「未發完」。 */
-    var courses = (cfg.courses || []).map(function (c) {
-      var keys = [c.cls, c.label].filter(Boolean);
-      var hit = tasks.filter(function (t) { return t.type === '成績' && keys.some(function (k) { return (t.name || '').indexOf(k) >= 0; }); });
-      var st = !hit.length ? '未發送' : (hit.some(function (t) { return t.fail > 0; }) ? '未發完' : '已發送');
+       當天「成績」任務對到這一班就算已發送；有未成功的算「未發完」。
+       對法：任務名稱裡有完整班別（國二理化公校班）最準；
+       名稱比較短時（例如「國二理化小考成績」→ 國二理化），對到班別開頭是它的班；同時對到好幾班時，
+       名稱有「輔導」就算輔導課、沒有就算正課。 */
+    var cList = (cfg.courses || []).map(function (c) { return { label: c.label, cls: c.cls, hits: [] }; });
+    tasks.filter(function (t) { return t.type === '成績'; }).forEach(function (t) {
+      var name = t.name || '', isTu = /輔導/.test(name);
+      var hit = cList.filter(function (c) { return [c.cls, c.label].some(function (k) { return k && name.indexOf(k) >= 0; }); });
+      if (!hit.length) {
+        var core = name.replace(/[（(].*$/, '').replace(/(小考)?成績$|小考$/, '').replace(/班$/, '').trim();
+        if (core.length >= 3) {
+          hit = cList.filter(function (c) { return [c.cls, c.label].some(function (k) { return k && k.indexOf(core) === 0; }); });
+          var pref = hit.filter(function (c) { return /輔導/.test(c.cls || c.label) === isTu; });
+          if (pref.length) hit = pref;
+        }
+      }
+      hit.forEach(function (c) { c.hits.push(t); });
+    });
+    var courses = cList.map(function (c) {
+      var st = !c.hits.length ? '未發送' : (c.hits.some(function (t) { return t.fail > 0; }) ? '未發完' : '已發送');
       return { label: c.label, status: st };
     });
 
