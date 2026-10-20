@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.33', VERSION_DATE = '2026/10/20';
+  var VERSION = '1.34', VERSION_DATE = '2026/10/20';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -3338,8 +3338,9 @@
     P + ' tr.ll-day td{background:#e8f5e9;font-weight:bold;color:#1b5e20}' +
     P + ' tr.ll-cx td{color:#999;text-decoration:line-through}' +
     P + ' tr.ll-cx td.ll-keep{text-decoration:none}' +
-    P + ' td input.ll-ed{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:4px;font-size:13px;background:transparent}' +
-    P + ' td input.ll-ed:hover,' + P + ' td input.ll-ed:focus{border-color:#ccc;background:#fff}' +
+    P + ' td .ll-ed{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:4px;font-size:13px;background:transparent;font-family:inherit;color:inherit}' +
+    P + ' td textarea.ll-ed{resize:none;overflow:hidden;line-height:1.45;white-space:pre-wrap}' +
+    P + ' td .ll-ed:hover,' + P + ' td .ll-ed:focus{border-color:#ccc;background:#fff}' +
     P + ' .ll-kind{display:inline-block;border-radius:10px;padding:0 7px;font-size:12px;color:#fff;background:#2e7d32}' +
     P + ' .ll-kind.k-遲到{background:#ef6c00}' + P + ' .ll-kind.k-早退{background:#6a1b9a}' + P + ' .ll-kind.k-線上{background:#1565c0}' +
     P + ' .ll-msg{white-space:pre-wrap;background:#f1f8e9;border-radius:6px;padding:4px 6px;margin-top:3px;font-size:12px;color:#33691e}' +
@@ -3439,14 +3440,15 @@
     var h = '<div class="ll-box">' + md(state.from) + (state.to !== state.from ? '～' + md(state.to) : '') + '：共 <b>' + n + '</b> 筆' +
       (open ? '，<b style="color:#c62828">' + open + '</b> 筆還沒確認' : '，全部確認了 ✔') + '</div>';
     if (!rows.length) { $('.ll-out').innerHTML = h + '<div class="ll-muted">這段時間沒有請假紀錄。</div>'; return; }
-    h += '<table><tr><th style="width:28px">確認</th><th style="width:78px">學生</th><th style="width:84px">班別</th><th>類型／原因／家長訊息</th><th style="width:110px">備註</th><th style="width:20px"></th></tr>';
+    h += '<table><tr><th style="width:28px">確認</th><th style="width:78px">學生</th><th style="width:120px">班別</th><th>類型／原因／家長訊息</th><th style="width:110px">備註</th><th style="width:20px"></th></tr>';
     var day = '';
     rows.forEach(function (r) {
       if (r.date !== day) { day = r.date; h += '<tr class="ll-day"><td colspan="6">🗓 ' + md(day) + '（' + esc(r.wd) + '）</td></tr>'; }
       h += '<tr data-id="' + r.id + '"' + (r.cancelled ? ' class="ll-cx"' : '') + '>' +
         '<td class="ll-keep"><input type="checkbox" class="ll-ok"' + (r.confirmed ? ' checked' : '') + ' title="' + (r.confirmed ? '確認時間 ' + esc(r.confirmed_at) : '打勾＝已確認') + '"></td>' +
         '<td><input class="ll-ed" data-f="student" value="' + esc(r.student) + '" placeholder="（姓名？）"></td>' +
-        '<td><input class="ll-ed" data-f="cls" value="' + esc(r.cls) + '" placeholder="班別"></td>' +
+        /* 班別：一班一行，整個班名都看得到 */
+        '<td><textarea class="ll-ed" data-f="cls" rows="' + Math.max(1, String(r.cls || '').split('、').length) + '" placeholder="班別">' + esc(String(r.cls || '').split('、').join('\n')) + '</textarea></td>' +
         '<td><span class="ll-kind k-' + esc(r.kind) + '">' + esc(r.kind) + '</span> ' + esc(r.reason) +
         (r.cancelled ? ' <b class="ll-keep" style="color:#c62828">已取消</b>' : '') +
         (r.parent ? '<div class="ll-muted">' + esc(r.parent) + '　' + esc(String(r.received).slice(5)) + '</div>' : '<div class="ll-muted">手動新增　' + esc(String(r.received).slice(5)) + '</div>') +
@@ -3465,8 +3467,15 @@
   $('.ll-out').addEventListener('change', function (e) {
     var r = rowOf(e.target); if (!r) return;
     if (e.target.classList.contains('ll-ok')) update(r, { confirmed: e.target.checked }).then(function () { if (e.target.checked) r.confirmed_at = '剛剛'; draw(); });
-    else if (e.target.classList.contains('ll-ed')) update(r, (function (o) { o[e.target.dataset.f] = e.target.value.trim(); return o; })({}), e.target)
+    else if (e.target.classList.contains('ll-ed')) update(r, (function (o) {
+      var f = e.target.dataset.f, v = e.target.value.trim();
+      o[f] = f === 'cls' ? v.split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean).join('、') : v;   /* 一行一班 → 存成「、」分開 */
+      return o; })({}), e.target)
       .then(function () { if (e.target.dataset.f === 'student') setTimeout(reload, 900); });   /* 改姓名後，伺服器會重帶班別 */
+  });
+  /* 班別打字時（按 Enter 加一班），高度跟著變 */
+  $('.ll-out').addEventListener('input', function (e) {
+    if (e.target.tagName === 'TEXTAREA') e.target.rows = Math.max(1, e.target.value.split('\n').length);
   });
   $('.ll-out').addEventListener('click', function (e) {
     if (!e.target.classList.contains('ll-x')) return;
@@ -3501,7 +3510,7 @@
 
   /* 分頁開著的時候每分鐘自動更新（正在打字時不更新） */
   setInterval(function () {
-    if (!panel.offsetParent || panel.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+    if (!panel.offsetParent || panel.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     reload();
   }, 60000);
   setRange('week');
