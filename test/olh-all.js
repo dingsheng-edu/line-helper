@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.32', VERSION_DATE = '2026/10/20';
+  var VERSION = '1.33', VERSION_DATE = '2026/10/20';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -3415,7 +3415,7 @@
   var GAOQUN = 'U6e93b8aa5105cd6744edb4c7dc78923e', tried = {};
   async function guessNames() {
     if ((location.pathname.split('/')[1] || '') !== GAOQUN) return;
-    var todo = state.rows.filter(function (r) { return !r.student && r.parent && !tried[r.id]; });
+    var todo = state.rows.filter(function (r) { return (!r.student || /可能是/.test(r.note || '')) && r.parent && !tried[r.id]; });
     var changed = false;
     for (var i = 0; i < todo.length; i++) {
       var r = todo[i]; tried[r.id] = 1;
@@ -3426,7 +3426,7 @@
           .map(function (c) { return c.profile.nickname; });
         if (!nicks.length) continue;
         var g = await srv('/leaves/' + r.id + '/guess', { nicknames: nicks });
-        if (g.student || g.note) { r.student = g.student || ''; if (g.note && (r.note || '').indexOf(g.note) < 0) r.note = ((r.note || '') + ' ' + g.note).trim(); changed = true; }
+        if (g.student !== r.student || g.note !== r.note || g.cls !== r.cls) { r.student = g.student || ''; r.note = g.note || ''; r.cls = g.cls || ''; changed = true; }
       } catch (e) { }
     }
     if (changed) draw();
@@ -3465,7 +3465,8 @@
   $('.ll-out').addEventListener('change', function (e) {
     var r = rowOf(e.target); if (!r) return;
     if (e.target.classList.contains('ll-ok')) update(r, { confirmed: e.target.checked }).then(function () { if (e.target.checked) r.confirmed_at = '剛剛'; draw(); });
-    else if (e.target.classList.contains('ll-ed')) update(r, (function (o) { o[e.target.dataset.f] = e.target.value.trim(); return o; })({}), e.target);
+    else if (e.target.classList.contains('ll-ed')) update(r, (function (o) { o[e.target.dataset.f] = e.target.value.trim(); return o; })({}), e.target)
+      .then(function () { if (e.target.dataset.f === 'student') setTimeout(reload, 900); });   /* 改姓名後，伺服器會重帶班別 */
   });
   $('.ll-out').addEventListener('click', function (e) {
     if (!e.target.classList.contains('ll-x')) return;
