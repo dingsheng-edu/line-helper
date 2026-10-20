@@ -45,10 +45,11 @@
     { key: 'tag', name: '批次上標籤', color: '#ef6c00' },
     { key: 'msg', name: '批次發訊息', color: '#6a1b9a' },
     { key: 'grade', name: '批次發成績', color: '#1565c0' },
-    { key: 'leave', name: '請假總表', color: '#2e7d32' }
+    { key: 'leave', name: '請假總表', color: '#2e7d32', testOnly: true }   /* 2026/10/20 管理者說正式版先不要放：只有測試版書籤看得到 */
     /* 回覆小幫手：2026/10/19 管理者說先不要放，要用時把下面這行和 build_install_page.py 的 assist 那行打開
     , { key: 'assist', name: '回覆小幫手', color: '#00897b' } */
   ];
+  TABS = TABS.filter(function (t) { return !t.testOnly || window.__olhTest; });
 
   var S = '#' + SHELL_ID;
   var css = '' +
@@ -3290,7 +3291,7 @@
 })(mount('grade'));
 
 /* ===== line-leaves.js ===== */
-(function (__mount) {
+if (window.__olhTest) (function (__mount) {
 /*
   請假總表：家長在 LINE 傳來的請假訊息，補習班電腦上的機器人會自動整理成一筆一筆，
   這個分頁把它們列出來，櫃台可以打勾確認、改名字、加備註、手動新增、下載 Excel。
