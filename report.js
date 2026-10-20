@@ -6,6 +6,7 @@
   2. 畫一張重點圖（畫在網頁裡，不用存檔）
   3. 用聊天室發給指定的人：先文字，再圖；發完到聊天室確認送達
   dryRun：只畫圖、不發送，把圖顯示在頁面上給人看。
+  second：第二次檢測（每晚 22:30）。只列上一次報告之後新的任務；沒有新紀錄就不發。今日課程小考成績表一樣列全部。
   結果放在 window.__olhReportResult。
 */
 (async function () {
@@ -26,12 +27,9 @@
     var num = function (v) { return parseInt(v, 10) || 0; };
     var tasks = rows.map(function (r) {
       return { name: r['名稱'], type: r['訊息'], bot: r['帳號'], pc: r['主機'], total: num(r['訊息數']),
-        ok: num(r['發送成功']) + num(r['補發成功']), fail: num(r['未成功']), status: r['狀態'], time: r['時間'] };
+        ok: num(r['發送成功']) + num(r['補發成功']), fail: num(r['未成功']), status: r['狀態'], time: r['時間'],
+        upd: r['最後更新'] || ((r['日期'] || date) + ' ' + (r['時間'] || '')) };
     });
-    var sum = tasks.reduce(function (a, t) { a.total += t.total; a.ok += t.ok; a.fail += t.fail; return a; }, { total: 0, ok: 0, fail: 0 });
-    var rate = sum.total ? Math.round(sum.ok / sum.total * 1000) / 10 : 0;
-    var pending = tasks.filter(function (t) { return t.fail > 0; });
-    var byType = {}; tasks.forEach(function (t) { byType[t.type] = (byType[t.type] || 0) + 1; });
 
     /* 今日課程的小考成績有沒有發：cfg.courses 由 today_courses.py 從課表算出來 [{label, cls}]。
        當天「成績」任務對到這一班就算已發送；有未成功的算「未發完」。
@@ -62,8 +60,36 @@
       return { label: c.label, status: st };
     });
 
+    /* 第二次檢測（cfg.second）：只看上一次報告之後「新的紀錄」（開始或最後更新在那之後的任務）。
+       上一次報告的時間：到 cfg.to[0] 的聊天室找今天最後一則報告訊息；找不到用 21:00。cfg.since（'HH:MM'）可以直接指定。
+       沒有新紀錄就不發（res.skipped = true）。今日課程小考成績表一樣用「今天全部」的任務算。 */
+    var HEAD1 = '📊 官方LINE小幫手 每日發送報告｜' + dateLabel, HEAD2 = '🔁 官方LINE小幫手 第二次檢測｜' + dateLabel;
+    if (cfg.second) {
+      var since = cfg.since || '';
+      if (!since && cfg.to && cfg.to[0]) {
+        try {
+          var hist = ((await (await fetch('/api/v3/bots/' + botId + '/chats/' + cfg.to[0] + '/messages?limit=50', { credentials: 'same-origin' })).json()).list || []);
+          var last = 0;
+          hist.forEach(function (m) {
+            var tx = m.type === 'messageSent' && m.message && m.message.text || '';
+            if ((tx.indexOf(HEAD1) === 0 || tx.indexOf(HEAD2) === 0) && m.timestamp > last) last = m.timestamp;
+          });
+          if (last) { var ld = new Date(last); since = pad(ld.getHours()) + ':' + pad(ld.getMinutes()); }
+        } catch (e) { }
+      }
+      since = since || '21:00';
+      res.since = since;
+      var cut = date + ' ' + since;
+      tasks = tasks.filter(function (t) { return (t.upd || '') > cut; });
+      if (!tasks.length) { res.ok = true; res.skipped = true; res.step = 'done'; res.text = '（' + since + ' 之後沒有新紀錄，不用發）'; return; }
+    }
+    var sum = tasks.reduce(function (a, t) { a.total += t.total; a.ok += t.ok; a.fail += t.fail; return a; }, { total: 0, ok: 0, fail: 0 });
+    var rate = sum.total ? Math.round(sum.ok / sum.total * 1000) / 10 : 0;
+    var pending = tasks.filter(function (t) { return t.fail > 0; });
+    var byType = {}; tasks.forEach(function (t) { byType[t.type] = (byType[t.type] || 0) + 1; });
+
     /* 2. 文字重點 */
-    var text = '📊 官方LINE小幫手 每日發送報告｜' + dateLabel + '\n';
+    var text = (cfg.second ? HEAD2 + '\n' + since + ' 報告之後新的紀錄：\n' : HEAD1 + '\n');
     if (!tasks.length) text += '今天沒有發送紀錄。';
     else {
       text += '任務 ' + tasks.length + ' 個（' + Object.keys(byType).map(function (k) { return k + ' ' + byType[k]; }).join('、') + '）\n' +
@@ -91,8 +117,8 @@
       var g = cv.getContext('2d'), F = '"Microsoft JhengHei","PingFang TC",sans-serif';
       g.fillStyle = '#f5f7f8'; g.fillRect(0, 0, W, H);
       g.fillStyle = '#06c755'; g.fillRect(0, 0, W, 130);
-      g.fillStyle = '#fff'; g.font = 'bold 46px ' + F; g.fillText('每日發送報告' + (cfg.testLabel ? '（測試・假資料）' : ''), 50, 75);
-      g.font = '28px ' + F; g.fillText(dateLabel + '　官方LINE小幫手', 52, 115);
+      g.fillStyle = '#fff'; g.font = 'bold 46px ' + F; g.fillText((cfg.second ? '第二次檢測' : '每日發送報告') + (cfg.testLabel ? '（測試・假資料）' : ''), 50, 75);
+      g.font = '28px ' + F; g.fillText(dateLabel + '　官方LINE小幫手' + (cfg.second ? '　' + since + ' 報告之後新的紀錄' : ''), 52, 115);
       var ty = 160;   /* 小考成績表格從這裡開始畫 */
       if (tasks.length) {
       var cards = [['任務', tasks.length + ' 個', '#1565c0'], ['訊息', sum.total + ' 則', '#6a1b9a'], ['成功率', rate + '%', '#2e7d32'], ['未成功', sum.fail + ' 則', sum.fail ? '#c62828' : '#2e7d32']];
@@ -103,7 +129,7 @@
         g.fillStyle = '#555'; g.font = '28px ' + F; g.fillText(c[0], x + 22, y + 55);
         g.fillStyle = c[2]; g.font = 'bold 50px ' + F; g.fillText(c[1], x + 22, y + 120);
       });
-      g.fillStyle = '#222'; g.font = 'bold 32px ' + F; g.fillText('各任務（綠＝成功、紅＝未成功）', 40, 370);
+      g.fillStyle = '#222'; g.font = 'bold 32px ' + F; g.fillText((cfg.second ? '新的任務' : '各任務') + '（綠＝成功、紅＝未成功）', 40, 370);
       var maxT = Math.max.apply(null, list.map(function (t) { return t.total; }).concat([1]));
       list.forEach(function (t, i) {
         var y = 400 + i * rowH, barX = 400, barW = 480;
@@ -177,7 +203,7 @@
       if (blob) {
         await new Promise(function (r) { setTimeout(r, 800); });
         var fd = new FormData(), sid2 = uuid(); r1.ids.push(sid2);
-        fd.append('file', new File([blob], '每日發送報告_' + date.replace(/\//g, '') + '.png', { type: 'image/png' })); fd.append('sendId', sid2);
+        fd.append('file', new File([blob], (cfg.second ? '第二次檢測_' : '每日發送報告_') + date.replace(/\//g, '') + '.png', { type: 'image/png' })); fd.append('sendId', sid2);
         r1.image = (await fetch('/api/v1/bots/' + botId + '/chats/' + id + '/messages/sendFile', { method: 'POST', credentials: 'same-origin', headers: hdr(false), body: fd })).status;
       }
       res.sent.push(r1);
