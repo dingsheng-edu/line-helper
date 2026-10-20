@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.34', VERSION_DATE = '2026/10/20';
+  var VERSION = '1.35', VERSION_DATE = '2026/10/20';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1985,6 +1985,18 @@
   }
 
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
+  /* ========== 發完自動清空：名單、範本、填空、照片都回到原始狀態 ========== */
+  function resetForm() {
+    $('.lg-paste').value = ''; $('.lg-file').value = ''; $('.lg-info').innerHTML = ''; $('.lg-chips').innerHTML = ''; state.table = null;
+    panel.querySelector('input[name=lm-mode][value=same]').checked = true; state.sameText = '';
+    applyMode();
+    $('.lg-tsel').value = ''; $('.lg-tpl').value = ''; state.fill = {}; lastKeys = ''; renderFill(true);
+    state.photos = []; renderThumbs(); panel.querySelector('input[name=lm-porder][value=text]').checked = true;
+    $('.lg-task').value = ''; $('.lg-send').disabled = true;
+    renderLivePreview();
+    $('.lg-prog').textContent += '　✔ 已清空名單、範本和照片，下一批請重新選範本、放名單。';
+  }
+
   async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
     var jobs = [];
@@ -2102,6 +2114,8 @@
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
     else if (resuming && OLHX) keepPending(state.task.status);
+
+    resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
 
   /* 發完之後到每個聊天室確認真的有這則訊息（和批次發成績同一套）：
@@ -3061,6 +3075,21 @@
   }
 
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
+  /* ========== 發完自動清空：班別、成績、補考／輔導、範本都回到原始狀態 ========== */
+  function resetForm() {
+    $('.lg-paste').value = ''; $('.lg-file').value = ''; $('.lg-info').innerHTML = ''; $('.lg-chips').innerHTML = ''; state.table = null;
+    $('.lg-class-sel').value = ''; $('.lg-class').value = ''; showClassInput(false);
+    panel.querySelectorAll('input[name=lg-rtq]').forEach(function (r) { r.checked = false; });
+    $('.lg-retest-box').style.display = 'none'; $('.lg-rtq-need').style.display = '';
+    $('.lg-tu-cls').value = ''; $('.lg-tu-date').value = ''; $('.lg-tu-start').value = ''; $('.lg-tu-end').value = '';
+    showTutorTime(); renderTutorHint();
+    panel.querySelector('input[name=lg-rt][value=avg]').checked = true; $('.lg-retest-min').value = '60';
+    $('.lg-rt-text').value = RETEST_SENTENCE; $('.lg-tpl').value = DEFAULT_TEMPLATE; $('.lg-task').value = '';
+    $('.lg-send').disabled = true;
+    renderLivePreview();
+    $('.lg-prog').textContent += '　✔ 已清空班別、成績和範本，下一份成績請重新選班別、放 Excel。';
+  }
+
   async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
     var jobs = [];
@@ -3161,6 +3190,8 @@
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
     else if (resuming && OLHX) keepPending(state.task.status);
+
+    resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
 
   /* 發完之後到每個聊天室確認真的有這則訊息：
