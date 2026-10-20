@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.30', VERSION_DATE = '2026/10/19';
+  var VERSION = '1.35', VERSION_DATE = '2026/10/20';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -44,10 +44,12 @@
   var TABS = [
     { key: 'tag', name: '批次上標籤', color: '#ef6c00' },
     { key: 'msg', name: '批次發訊息', color: '#6a1b9a' },
-    { key: 'grade', name: '批次發成績', color: '#1565c0' }
+    { key: 'grade', name: '批次發成績', color: '#1565c0' },
+    { key: 'leave', name: '請假總表', color: '#2e7d32', testOnly: true }   /* 2026/10/20 管理者說正式版先不要放：只有測試版書籤看得到 */
     /* 回覆小幫手：2026/10/19 管理者說先不要放，要用時把下面這行和 build_install_page.py 的 assist 那行打開
     , { key: 'assist', name: '回覆小幫手', color: '#00897b' } */
   ];
+  TABS = TABS.filter(function (t) { return !t.testOnly || window.__olhTest; });
 
   var S = '#' + SHELL_ID;
   var css = '' +
@@ -1984,6 +1986,18 @@
   }
 
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
+  /* ========== 發完自動清空：名單、範本、填空、照片都回到原始狀態 ========== */
+  function resetForm() {
+    $('.lg-paste').value = ''; $('.lg-file').value = ''; $('.lg-info').innerHTML = ''; $('.lg-chips').innerHTML = ''; state.table = null;
+    panel.querySelector('input[name=lm-mode][value=same]').checked = true; state.sameText = '';
+    applyMode();
+    $('.lg-tsel').value = ''; $('.lg-tpl').value = ''; state.fill = {}; lastKeys = ''; renderFill(true);
+    state.photos = []; renderThumbs(); panel.querySelector('input[name=lm-porder][value=text]').checked = true;
+    $('.lg-task').value = ''; $('.lg-send').disabled = true;
+    renderLivePreview();
+    $('.lg-prog').textContent += '　✔ 已清空名單、範本和照片，下一批請重新選範本、放名單。';
+  }
+
   async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
     var jobs = [];
@@ -2101,6 +2115,8 @@
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
     else if (resuming && OLHX) keepPending(state.task.status);
+
+    resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
 
   /* 發完之後到每個聊天室確認真的有這則訊息（和批次發成績同一套）：
@@ -3060,6 +3076,21 @@
   }
 
   /* resendJobs：重發時只傳入要重發的那幾則；沒傳＝發送全部有勾選的 */
+  /* ========== 發完自動清空：班別、成績、補考／輔導、範本都回到原始狀態 ========== */
+  function resetForm() {
+    $('.lg-paste').value = ''; $('.lg-file').value = ''; $('.lg-info').innerHTML = ''; $('.lg-chips').innerHTML = ''; state.table = null;
+    $('.lg-class-sel').value = ''; $('.lg-class').value = ''; showClassInput(false);
+    panel.querySelectorAll('input[name=lg-rtq]').forEach(function (r) { r.checked = false; });
+    $('.lg-retest-box').style.display = 'none'; $('.lg-rtq-need').style.display = '';
+    $('.lg-tu-cls').value = ''; $('.lg-tu-date').value = ''; $('.lg-tu-start').value = ''; $('.lg-tu-end').value = '';
+    showTutorTime(); renderTutorHint();
+    panel.querySelector('input[name=lg-rt][value=avg]').checked = true; $('.lg-retest-min').value = '60';
+    $('.lg-rt-text').value = RETEST_SENTENCE; $('.lg-tpl').value = DEFAULT_TEMPLATE; $('.lg-task').value = '';
+    $('.lg-send').disabled = true;
+    renderLivePreview();
+    $('.lg-prog').textContent += '　✔ 已清空班別、成績和範本，下一份成績請重新選班別、放 Excel。';
+  }
+
   async function doSend(resendJobs, resuming) {
     if (state.busy || !state.items) return;
     var jobs = [];
@@ -3160,6 +3191,8 @@
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
     else if (resuming && OLHX) keepPending(state.task.status);
+
+    resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
 
   /* 發完之後到每個聊天室確認真的有這則訊息：
@@ -3256,6 +3289,266 @@
 })();
 
 })(mount('grade'));
+
+/* ===== line-leaves.js ===== */
+if (window.__olhTest) (function (__mount) {
+/*
+  請假總表：家長在 LINE 傳來的請假訊息，補習班電腦上的機器人會自動整理成一筆一筆，
+  這個分頁把它們列出來，櫃台可以打勾確認、改名字、加備註、手動新增、下載 Excel。
+  「批次發訊息」選「缺課」範本時，也會用這裡的資料把有請假的同學改發「請假版」。
+  資料不在這個檔案裡（檔案是公開的），放在補習班電腦上，要密碼（和回覆小幫手同一組）才拿得到。
+  注意：本檔案只能用 區塊註解，不要用雙斜線註解（做成書籤時會壞掉）。
+*/
+(function () {
+  'use strict';
+
+  var PANEL_ID = 'll-panel-2026';
+  var old = document.getElementById(PANEL_ID);
+  if (old) { old.style.display = old.style.display === 'none' ? 'block' : 'none'; return; }
+
+  var DEFAULT_SERVER = 'https://mirier-nontotalitarian-dia.ngrok-free.dev';
+  var KEY_KEY = 'la-key', SERVER_KEY = 'la-server';   /* 和回覆小幫手共用 */
+  function load(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+
+  /* ========== 連線（補習班電腦上的機器人） ========== */
+  function server() { return (load(SERVER_KEY) || DEFAULT_SERVER).replace(/\/+$/, ''); }
+  function hdr(json) {
+    var h = { 'X-Assist-Key': load(KEY_KEY), 'ngrok-skip-browser-warning': '1' };
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
+  }
+  async function srv(path, body) {
+    if (!load(KEY_KEY)) throw new Error('還沒輸入請假總表的密碼');
+    var r;
+    try {
+      r = await fetch(server() + path, body ? { method: 'POST', headers: hdr(true), body: JSON.stringify(body) } : { headers: hdr(false) });
+    } catch (e) { throw new Error('連不到補習班電腦（電腦或機器人可能沒開）'); }
+    var j = null;
+    try { j = await r.json(); } catch (e) { }
+    /* 中間的 ngrok 有時會把錯誤代碼改成 200，所以看內容有沒有 error 判斷 */
+    if (!r.ok || !j || j.error) throw new Error((j && j.error) || ('補習班電腦回應錯誤 ' + r.status));
+    return j;
+  }
+  function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function addDays(s, n) { var p = s.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2] + n); return ymd(d); }
+  function md(s) { var p = String(s || '').split('-'); return p.length === 3 ? (+p[1]) + '/' + (+p[2]) : s; }
+
+  /* 給「批次發訊息」用：某一天的請假（不含已取消），以及用學生姓名找人 */
+  window.OLHLeaves = {
+    forDate: async function (day) {
+      var j = await srv('/leaves?from=' + day + '&to=' + day);
+      return j.leaves.filter(function (x) { return !x.cancelled && x.kind === '請假'; });
+    },
+    /* 全名一樣最準；家長只寫名字（例如「宥維」）時，名單上的全名結尾一樣也算，但會標「只對到名字」 */
+    match: function (list, name) {
+      var exact = list.filter(function (x) { return x.student && x.student === name; });
+      if (exact.length) return { lv: exact[0], partial: false };
+      var part = list.filter(function (x) { return x.student && x.student.length >= 2 && name.length > x.student.length && name.slice(-x.student.length) === x.student; });
+      return part.length ? { lv: part[0], partial: true } : null;
+    },
+    hasKey: function () { return !!load(KEY_KEY); }
+  };
+
+  /* ========== 畫面 ========== */
+  var P = '#' + PANEL_ID, MAIN = '#2e7d32';
+  var css = '' +
+    P + '{background:#fff;color:#222;font:14px/1.5 "Microsoft JhengHei","PingFang TC",sans-serif}' +
+    P + ' *{box-sizing:border-box}' +
+    P + ' .ll-body{padding:10px 12px}' +
+    P + ' input[type=password],' + P + ' input[type=text],' + P + ' input[type=date],' + P + ' select{padding:3px 6px;border:1px solid #ccc;border-radius:6px;font-size:14px}' +
+    P + ' button.ll-btn{padding:5px 12px;margin:3px 6px 0 0;border-radius:6px;border:1px solid ' + MAIN + ';background:' + MAIN + ';color:#fff;font-size:14px;cursor:pointer}' +
+    P + ' button.ll-btn.sec{background:#fff;color:' + MAIN + '}' +
+    P + ' button.ll-btn.on{background:' + MAIN + ';color:#fff}' +
+    P + ' button:disabled{opacity:.4;cursor:not-allowed}' +
+    P + ' .ll-box{background:#f5f7f8;border-radius:8px;padding:8px 10px;margin:6px 0}' +
+    P + ' .ll-muted{color:#777;font-size:12px}' +
+    P + ' .ll-err{background:#ffebee;color:#b71c1c;border-radius:8px;padding:6px 10px;margin:6px 0;font-weight:bold}' +
+    P + ' table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}' +
+    P + ' th,' + P + ' td{border-bottom:1px solid #eee;padding:5px 4px;text-align:left;vertical-align:top}' +
+    P + ' th{background:#f5f7f8;position:sticky;top:0}' +
+    P + ' tr.ll-day td{background:#e8f5e9;font-weight:bold;color:#1b5e20}' +
+    P + ' tr.ll-cx td{color:#999;text-decoration:line-through}' +
+    P + ' tr.ll-cx td.ll-keep{text-decoration:none}' +
+    P + ' td .ll-ed{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:4px;font-size:13px;background:transparent;font-family:inherit;color:inherit}' +
+    P + ' td textarea.ll-ed{resize:none;overflow:hidden;line-height:1.45;white-space:pre-wrap}' +
+    P + ' td .ll-ed:hover,' + P + ' td .ll-ed:focus{border-color:#ccc;background:#fff}' +
+    P + ' .ll-kind{display:inline-block;border-radius:10px;padding:0 7px;font-size:12px;color:#fff;background:#2e7d32}' +
+    P + ' .ll-kind.k-遲到{background:#ef6c00}' + P + ' .ll-kind.k-早退{background:#6a1b9a}' + P + ' .ll-kind.k-線上{background:#1565c0}' +
+    P + ' .ll-msg{white-space:pre-wrap;background:#f1f8e9;border-radius:6px;padding:4px 6px;margin-top:3px;font-size:12px;color:#33691e}' +
+    P + ' .ll-x{cursor:pointer;border:none;background:none;color:#c62828;font-size:15px}';
+
+  var panel = document.createElement('div');
+  panel.id = PANEL_ID;
+  panel.innerHTML = '<style>' + css + '</style>' +
+    '<div class="ll-body">' +
+    '<div class="ll-setup ll-box"><b>第一次使用：輸入請假總表的密碼</b>（問管理者，每台電腦輸入一次就會記住）<br>' +
+    '<input type="password" class="ll-key" placeholder="密碼" style="width:200px"> <button class="ll-btn ll-keysave">儲存</button>' +
+    '<details style="margin-top:4px"><summary class="ll-muted">進階設定</summary>伺服器網址：<input type="text" class="ll-srv" style="width:330px"></details></div>' +
+    '<div class="ll-muted">家長在 <b>高群</b> LINE 傳請假訊息，機器人會自動記在這裡（約 10 秒內）。打勾＝櫃台已確認／已處理。</div>' +
+    '<div style="margin-top:6px"><button class="ll-btn sec ll-r" data-r="today">今天</button><button class="ll-btn sec ll-r" data-r="tomorrow">明天</button>' +
+    '<button class="ll-btn sec ll-r" data-r="week">這 7 天</button><button class="ll-btn sec ll-r" data-r="past">過去 30 天</button> ' +
+    '<input type="date" class="ll-from"> ～ <input type="date" class="ll-to"> <button class="ll-btn ll-load">查詢</button></div>' +
+    '<div style="margin-top:4px"><label style="cursor:pointer"><input type="checkbox" class="ll-showcx"> 顯示已取消的</label>　' +
+    '<label style="cursor:pointer"><input type="checkbox" class="ll-onlyopen"> 只看還沒確認的</label>　' +
+    '<button class="ll-btn sec ll-xlsx">⬇ 下載 Excel</button><button class="ll-btn sec ll-addbtn">＋ 手動新增</button></div>' +
+    '<div class="ll-add ll-box" style="display:none">日期 <input type="date" class="ll-a-date"> 學生 <input type="text" class="ll-a-stu" style="width:80px"> ' +
+    '班別 <input type="text" class="ll-a-cls" style="width:90px"> <select class="ll-a-kind"><option>請假</option><option>遲到</option><option>早退</option><option>線上</option></select><br>' +
+    '原因 <input type="text" class="ll-a-rsn" style="width:140px"> 備註 <input type="text" class="ll-a-note" style="width:160px"> <button class="ll-btn ll-a-save">新增</button></div>' +
+    '<div class="ll-st ll-muted"></div>' +
+    '<div class="ll-out"></div>' +
+    '</div>';
+  __mount(panel);
+
+  var $ = function (s) { return panel.querySelector(s); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var state = { rows: [], from: '', to: '' };
+
+  function refreshSetup() {
+    $('.ll-setup').style.display = load(KEY_KEY) ? 'none' : 'block';
+    $('.ll-srv').value = server();
+  }
+  $('.ll-keysave').onclick = function () {
+    var k = $('.ll-key').value.trim(); if (!k) return;
+    save(KEY_KEY, k);
+    var s = $('.ll-srv').value.trim(); if (s && s !== DEFAULT_SERVER) save(SERVER_KEY, s);
+    $('.ll-key').value = ''; refreshSetup(); reload();
+  };
+  refreshSetup();
+
+  function setRange(r) {
+    var t = ymd(new Date()), f = t, to = t;
+    if (r === 'tomorrow') f = to = addDays(t, 1);
+    if (r === 'week') to = addDays(t, 6);
+    if (r === 'past') { f = addDays(t, -30); to = t; }
+    $('.ll-from').value = f; $('.ll-to').value = to;
+    panel.querySelectorAll('.ll-r').forEach(function (b) { b.classList.toggle('on', b.dataset.r === r); });
+    reload();
+  }
+  panel.querySelectorAll('.ll-r').forEach(function (b) { b.onclick = function () { setRange(this.dataset.r); }; });
+  $('.ll-load').onclick = function () { panel.querySelectorAll('.ll-r').forEach(function (b) { b.classList.remove('on'); }); reload(); };
+  $('.ll-showcx').onchange = $('.ll-onlyopen').onchange = function () { draw(); };
+
+  async function reload() {
+    var f = $('.ll-from').value, to = $('.ll-to').value;
+    if (!f || !to) return;
+    if (!load(KEY_KEY)) { $('.ll-out').innerHTML = ''; return; }
+    $('.ll-st').textContent = '讀取中…';
+    try {
+      var j = await srv('/leaves?from=' + f + '&to=' + to);
+      state.rows = j.leaves; state.from = f; state.to = to;
+      $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
+      draw();
+      guessNames();
+    } catch (e) { $('.ll-st').textContent = ''; $('.ll-out').innerHTML = '<div class="ll-err">' + esc(e.message) + '</div>'; }
+  }
+
+  /* 沒寫學生姓名的：用家長的 LINE 名稱在後台搜尋聯絡人，把後台名稱（例如「118慈文林文琪媽媽」）送去和學生名單比對。
+     只在高群帳號做（請假只有高群的機器人在記）；只讀聯絡人，不會打開聊天室。每筆只試一次。 */
+  var GAOQUN = 'U6e93b8aa5105cd6744edb4c7dc78923e', tried = {};
+  async function guessNames() {
+    if ((location.pathname.split('/')[1] || '') !== GAOQUN) return;
+    var todo = state.rows.filter(function (r) { return (!r.student || /可能是/.test(r.note || '')) && r.parent && !tried[r.id]; });
+    var changed = false;
+    for (var i = 0; i < todo.length; i++) {
+      var r = todo[i]; tried[r.id] = 1;
+      try {
+        var res = await fetch('/api/v2/bots/' + GAOQUN + '/contacts?query=' + encodeURIComponent(r.parent) + '&limit=50', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+        if (!res.ok) continue;
+        var nicks = ((await res.json()).list || []).filter(function (c) { var p = c.profile || {}; return p.name === r.parent && p.nickname; })
+          .map(function (c) { return c.profile.nickname; });
+        if (!nicks.length) continue;
+        var g = await srv('/leaves/' + r.id + '/guess', { nicknames: nicks });
+        if (g.student !== r.student || g.note !== r.note || g.cls !== r.cls) { r.student = g.student || ''; r.note = g.note || ''; r.cls = g.cls || ''; changed = true; }
+      } catch (e) { }
+    }
+    if (changed) draw();
+  }
+
+  function draw() {
+    var showCx = $('.ll-showcx').checked, onlyOpen = $('.ll-onlyopen').checked;
+    var rows = state.rows.filter(function (r) { return (showCx || !r.cancelled) && (!onlyOpen || !r.confirmed); });
+    var n = state.rows.filter(function (r) { return !r.cancelled; }).length, open = state.rows.filter(function (r) { return !r.cancelled && !r.confirmed; }).length;
+    var h = '<div class="ll-box">' + md(state.from) + (state.to !== state.from ? '～' + md(state.to) : '') + '：共 <b>' + n + '</b> 筆' +
+      (open ? '，<b style="color:#c62828">' + open + '</b> 筆還沒確認' : '，全部確認了 ✔') + '</div>';
+    if (!rows.length) { $('.ll-out').innerHTML = h + '<div class="ll-muted">這段時間沒有請假紀錄。</div>'; return; }
+    h += '<table><tr><th style="width:28px">確認</th><th style="width:78px">學生</th><th style="width:120px">班別</th><th>類型／原因／家長訊息</th><th style="width:110px">備註</th><th style="width:20px"></th></tr>';
+    var day = '';
+    rows.forEach(function (r) {
+      if (r.date !== day) { day = r.date; h += '<tr class="ll-day"><td colspan="6">🗓 ' + md(day) + '（' + esc(r.wd) + '）</td></tr>'; }
+      h += '<tr data-id="' + r.id + '"' + (r.cancelled ? ' class="ll-cx"' : '') + '>' +
+        '<td class="ll-keep"><input type="checkbox" class="ll-ok"' + (r.confirmed ? ' checked' : '') + ' title="' + (r.confirmed ? '確認時間 ' + esc(r.confirmed_at) : '打勾＝已確認') + '"></td>' +
+        '<td><input class="ll-ed" data-f="student" value="' + esc(r.student) + '" placeholder="（姓名？）"></td>' +
+        /* 班別：一班一行，整個班名都看得到 */
+        '<td><textarea class="ll-ed" data-f="cls" rows="' + Math.max(1, String(r.cls || '').split('、').length) + '" placeholder="班別">' + esc(String(r.cls || '').split('、').join('\n')) + '</textarea></td>' +
+        '<td><span class="ll-kind k-' + esc(r.kind) + '">' + esc(r.kind) + '</span> ' + esc(r.reason) +
+        (r.cancelled ? ' <b class="ll-keep" style="color:#c62828">已取消</b>' : '') +
+        (r.parent ? '<div class="ll-muted">' + esc(r.parent) + '　' + esc(String(r.received).slice(5)) + '</div>' : '<div class="ll-muted">手動新增　' + esc(String(r.received).slice(5)) + '</div>') +
+        (r.message ? '<div class="ll-msg">' + esc(r.message) + '</div>' : '') + '</td>' +
+        '<td class="ll-keep"><input class="ll-ed" data-f="note" value="' + esc(r.note) + '" placeholder="備註"></td>' +
+        '<td class="ll-keep"><button class="ll-x" title="刪除這筆（認錯的時候用）">✕</button></td></tr>';
+    });
+    $('.ll-out').innerHTML = h + '</table>';
+  }
+
+  function rowOf(el) { var tr = el.closest('tr[data-id]'); return tr ? state.rows.filter(function (r) { return String(r.id) === tr.dataset.id; })[0] : null; }
+  async function update(r, body, el) {
+    try { await srv('/leaves/' + r.id, body); for (var k in body) r[k] = body[k]; if (el) { el.style.background = '#e8f5e9'; setTimeout(function () { el.style.background = ''; }, 800); } }
+    catch (e) { alert('沒有存到：' + e.message); reload(); }
+  }
+  $('.ll-out').addEventListener('change', function (e) {
+    var r = rowOf(e.target); if (!r) return;
+    if (e.target.classList.contains('ll-ok')) update(r, { confirmed: e.target.checked }).then(function () { if (e.target.checked) r.confirmed_at = '剛剛'; draw(); });
+    else if (e.target.classList.contains('ll-ed')) update(r, (function (o) {
+      var f = e.target.dataset.f, v = e.target.value.trim();
+      o[f] = f === 'cls' ? v.split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean).join('、') : v;   /* 一行一班 → 存成「、」分開 */
+      return o; })({}), e.target)
+      .then(function () { if (e.target.dataset.f === 'student') setTimeout(reload, 900); });   /* 改姓名後，伺服器會重帶班別 */
+  });
+  /* 班別打字時（按 Enter 加一班），高度跟著變 */
+  $('.ll-out').addEventListener('input', function (e) {
+    if (e.target.tagName === 'TEXTAREA') e.target.rows = Math.max(1, e.target.value.split('\n').length);
+  });
+  $('.ll-out').addEventListener('click', function (e) {
+    if (!e.target.classList.contains('ll-x')) return;
+    var r = rowOf(e.target); if (!r) return;
+    var b = e.target;
+    if (b.dataset.armed) { update(r, { deleted: true }).then(reload); return; }
+    b.dataset.armed = '1'; b.textContent = '確定刪？'; b.style.fontSize = '12px';
+    setTimeout(function () { delete b.dataset.armed; b.textContent = '✕'; b.style.fontSize = ''; }, 3000);
+  });
+
+  $('.ll-addbtn').onclick = function () { var a = $('.ll-add'); a.style.display = a.style.display === 'none' ? 'block' : 'none'; if (!$('.ll-a-date').value) $('.ll-a-date').value = ymd(new Date()); };
+  $('.ll-a-save').onclick = async function () {
+    var body = { date: $('.ll-a-date').value, student: $('.ll-a-stu').value.trim(), cls: $('.ll-a-cls').value.trim(),
+      kind: $('.ll-a-kind').value, reason: $('.ll-a-rsn').value.trim(), note: $('.ll-a-note').value.trim() };
+    if (!body.date || !body.student) { alert('請填日期和學生姓名。'); return; }
+    try { await srv('/leaves', body); ['.ll-a-stu', '.ll-a-cls', '.ll-a-rsn', '.ll-a-note'].forEach(function (s) { $(s).value = ''; }); reload(); }
+    catch (e) { alert('沒有存到：' + e.message); }
+  };
+
+  $('.ll-xlsx').onclick = async function () {
+    var b = this; b.disabled = true;
+    try {
+      var r = await fetch(server() + '/leaves.xlsx?from=' + $('.ll-from').value + '&to=' + $('.ll-to').value, { headers: hdr(false) });
+      var type = r.headers.get('Content-Type') || '';
+      if (!r.ok || type.indexOf('spreadsheet') < 0) throw new Error('補習班電腦回應錯誤 ' + r.status);
+      var url = URL.createObjectURL(await r.blob()), a = document.createElement('a');
+      a.href = url; a.download = '請假總表_' + $('.ll-from').value + '_' + $('.ll-to').value + '.xlsx';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    } catch (e) { alert('下載失敗：' + (e.message.indexOf('Failed to fetch') >= 0 ? '連不到補習班電腦' : e.message)); }
+    b.disabled = false;
+  };
+
+  /* 分頁開著的時候每分鐘自動更新（正在打字時不更新） */
+  setInterval(function () {
+    if (!panel.offsetParent || panel.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    reload();
+  }, 60000);
+  setRange('week');
+})();
+
+})(mount('leave'));
 
   var first = load(TAB_KEY);
   showTab(TABS.some(function (t) { return t.key === first; }) ? first : TABS[0].key);
