@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.39', VERSION_DATE = '2026/10/21';
+  var VERSION = '1.40', VERSION_DATE = '2026/10/21';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1914,12 +1914,15 @@
       var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
       var box = document.createElement('div');
       box.className = 'lg-box lg-ask';
-      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
-      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
-        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
-        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+      /* 很明顯的確認框：紅色粗框、標題、會閃一下；放在結果區最上面（不會被灰色鎖住的步驟蓋掉） */
+      box.style.cssText = 'border:4px solid #c62828;background:#fff;margin:8px 0 12px;padding:12px 14px;border-radius:10px;box-shadow:0 0 0 4px rgba(198,40,40,.18),0 6px 18px rgba(0,0,0,.18);opacity:1;filter:none;pointer-events:auto';
+      box.innerHTML = '<div style="background:#c62828;color:#fff;font-size:17px;font-weight:bold;margin:-12px -14px 10px;padding:8px 14px;border-radius:6px 6px 0 0">⚠ 請在這裡確認，才會開始發送</div>' +
+        '<div style="white-space:pre-wrap;font-weight:bold;font-size:15px;color:#222">' + esc(text) + '</div>' +
+        '<input type="number" class="lg-ask-n" placeholder="' + n + '" style="width:110px;font-size:22px;padding:6px;margin-top:8px;border:3px solid #c62828;border-radius:8px;background:#fffde7"> ' +
+        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828;font-size:16px;padding:8px 18px">確定發送</button>' +
         '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
-      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      var out = $('.lg-out'); out.insertBefore(box, out.firstChild);
+      box.animate && box.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 450, iterations: 2 });
       var inp = box.querySelector('.lg-ask-n');
       function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
       box.querySelector('.lg-ask-ok').onclick = function () {
@@ -3022,12 +3025,15 @@
       var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
       var box = document.createElement('div');
       box.className = 'lg-box lg-ask';
-      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
-      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
-        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
-        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+      /* 很明顯的確認框：紅色粗框、標題、會閃一下；放在結果區最上面（不會被灰色鎖住的步驟蓋掉） */
+      box.style.cssText = 'border:4px solid #c62828;background:#fff;margin:8px 0 12px;padding:12px 14px;border-radius:10px;box-shadow:0 0 0 4px rgba(198,40,40,.18),0 6px 18px rgba(0,0,0,.18);opacity:1;filter:none;pointer-events:auto';
+      box.innerHTML = '<div style="background:#c62828;color:#fff;font-size:17px;font-weight:bold;margin:-12px -14px 10px;padding:8px 14px;border-radius:6px 6px 0 0">⚠ 請在這裡確認，才會開始發送</div>' +
+        '<div style="white-space:pre-wrap;font-weight:bold;font-size:15px;color:#222">' + esc(text) + '</div>' +
+        '<input type="number" class="lg-ask-n" placeholder="' + n + '" style="width:110px;font-size:22px;padding:6px;margin-top:8px;border:3px solid #c62828;border-radius:8px;background:#fffde7"> ' +
+        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828;font-size:16px;padding:8px 18px">確定發送</button>' +
         '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
-      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      var out = $('.lg-out'); out.insertBefore(box, out.firstChild);
+      box.animate && box.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 450, iterations: 2 });
       var inp = box.querySelector('.lg-ask-n');
       function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
       box.querySelector('.lg-ask-ok').onclick = function () {
