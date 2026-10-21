@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.38', VERSION_DATE = '2026/10/21';
+  var VERSION = '1.39', VERSION_DATE = '2026/10/21';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1985,12 +1985,14 @@
     if (state.task.closed) return '<div class="lg-muted" style="margin-top:6px">✔ 這個任務已結束，已記到發送紀錄總表（' + esc(state.task.status) + '）。</div>';
     return need
       ? '<br><button class="lg-btn lg-sec lg-keep" style="color:#c62828;border-color:#c62828">先結束任務（保留未成功的訊息）</button>'
-      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">✔ 結束此階段任務</button>';
+      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">' +
+        (state.task.resendOk ? '✔ 補發完成，結束這個任務' : '✔ 結束此階段任務') + '</button>' +
+        (state.task.resendOk ? '<div style="font-size:13px;font-weight:normal">補發的都送出了，最上面保留的工作已經拿掉。按上面按鈕就結束這個任務。</div>' : '');
   }
   function wireTaskButtons() {
     var end = $('.lg-endtask'), keep = $('.lg-keep');
     if (end) end.onclick = function () {
-      state.task.status = '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
+      state.task.status = state.task.resendOk ? '補發完成（已結束）' : '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
       if (state.pendingId) { OLHX.removePending(state.pendingId); state.pendingId = null; }
       renderSendResult();
     };
@@ -2151,7 +2153,8 @@
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
-    else if (resuming && OLHX) keepPending(state.task.status);
+    /* 有保留在最上面的工作：補發完更新保留內容；全部補發成功就從最上面拿掉（不用一直留著） */
+    else if (OLHX && (resuming || state.pendingId)) keepPending(state.task.status);
 
     resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
@@ -3090,12 +3093,14 @@
     if (state.task.closed) return '<div class="lg-muted" style="margin-top:6px">✔ 這個任務已結束，已記到發送紀錄總表（' + esc(state.task.status) + '）。</div>';
     return need
       ? '<br><button class="lg-btn lg-sec lg-keep" style="color:#c62828;border-color:#c62828">先結束任務（保留未成功的訊息）</button>'
-      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">✔ 結束此階段任務</button>';
+      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">' +
+        (state.task.resendOk ? '✔ 補發完成，結束這個任務' : '✔ 結束此階段任務') + '</button>' +
+        (state.task.resendOk ? '<div style="font-size:13px;font-weight:normal">補發的都送出了，最上面保留的工作已經拿掉。按上面按鈕就結束這個任務。</div>' : '');
   }
   function wireTaskButtons() {
     var end = $('.lg-endtask'), keep = $('.lg-keep');
     if (end) end.onclick = function () {
-      state.task.status = '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
+      state.task.status = state.task.resendOk ? '補發完成（已結束）' : '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
       if (state.pendingId) { OLHX.removePending(state.pendingId); state.pendingId = null; }
       renderSendResult();
     };
@@ -3242,7 +3247,8 @@
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
-    else if (resuming && OLHX) keepPending(state.task.status);
+    /* 有保留在最上面的工作：補發完更新保留內容；全部補發成功就從最上面拿掉（不用一直留著） */
+    else if (OLHX && (resuming || state.pendingId)) keepPending(state.task.status);
 
     resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
