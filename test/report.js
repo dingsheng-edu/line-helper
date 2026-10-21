@@ -30,6 +30,12 @@
         ok: num(r['發送成功']) + num(r['補發成功']), fail: num(r['未成功']), status: r['狀態'], time: r['時間'],
         upd: r['最後更新'] || ((r['日期'] || date) + ' ' + (r['時間'] || '')) };
     });
+    /* 換帳號「繼續發送」會在試算表多一筆新紀錄（同名稱、同帳號、同則數），舊的那筆還留著「未成功」。
+       有未成功的舊紀錄，如果後面有比較新的同一個任務，就只算新的那筆（不重複算、也不會誤報未發完）。 */
+    tasks = tasks.filter(function (t) {
+      if (!(t.fail > 0)) return true;
+      return !tasks.some(function (u) { return u !== t && u.name === t.name && u.bot === t.bot && u.total === t.total && (u.upd || '') > (t.upd || ''); });
+    });
 
     /* 今日課程的小考成績有沒有發：cfg.courses 由 today_courses.py 從課表算出來 [{label, cls}]。
        當天「成績」任務對到這一班就算已發送；有未成功的算「未發完」。
