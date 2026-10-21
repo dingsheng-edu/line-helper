@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.37', VERSION_DATE = '2026/10/21';
+  var VERSION = '1.38', VERSION_DATE = '2026/10/21';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -78,6 +78,8 @@
     S + ' .olh-tabs button{flex:1;padding:8px 6px;border:1px solid #dfe5e8;border-bottom:none;background:#fff;color:#555;border-radius:8px 8px 0 0;font-size:15px;cursor:pointer;margin-bottom:-1px}' +
     S + ' .olh-tabs button.on{color:#fff;font-weight:bold}' +
     S + ' .olh-main{flex:1;min-height:0;overflow:auto}' +
+    /* 請假總表：視窗自動變大（表格看得比較清楚）；換回其他分頁就恢復原本大小 */
+    S + '.olh-wide{width:min(1000px,calc(100vw - 24px))!important;height:calc(100vh - 24px)!important}' +
     S + '.olh-min .olh-tabs,' + S + '.olh-min .olh-main,' + S + '.olh-min .olh-set{display:none!important}' +
     S + '.olh-min{width:320px!important;height:auto!important;min-height:0;resize:none}' +
     /* 三個工具原本是各自浮在畫面上的視窗，放進分頁後改成普通區塊，並藏起它們自己的標題列 */
@@ -142,6 +144,8 @@
     });
     q('.olh-main').scrollTop = 0;
     save(TAB_KEY, k);
+    shell.classList.toggle('olh-wide', k === 'leave');
+    if (k === 'leave' && shell.style.left) { var wr = shell.getBoundingClientRect(); if (wr.right > window.innerWidth - 12) { shell.style.left = Math.max(12, window.innerWidth - wr.width - 12) + 'px'; } if (wr.top + wr.height > window.innerHeight) shell.style.top = '12px'; }
   }
   shell.querySelectorAll('.olh-tabs button').forEach(function (b) { b.onclick = function () { showTab(this.getAttribute('data-k')); }; });
 
@@ -3413,18 +3417,24 @@ if (window.__olhTest) (function (__mount) {
     P + ' .ll-box{background:#f5f7f8;border-radius:8px;padding:8px 10px;margin:6px 0}' +
     P + ' .ll-muted{color:#777;font-size:12px}' +
     P + ' .ll-err{background:#ffebee;color:#b71c1c;border-radius:8px;padding:6px 10px;margin:6px 0;font-weight:bold}' +
-    P + ' table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}' +
-    P + ' th,' + P + ' td{border-bottom:1px solid #eee;padding:5px 4px;text-align:left;vertical-align:top}' +
+    P + ' table{width:100%;border-collapse:collapse;font-size:15px;margin-top:6px}' +
+    P + ' th,' + P + ' td{border-bottom:1px solid #e3e8eb;padding:8px 6px;text-align:left;vertical-align:top}' +
+    /* 確認那一格：整格都可以點，勾勾放大；確認過的那一列變淡綠色 */
+    P + ' td.ll-okcell{padding:0;width:64px}' +
+    P + ' label.ll-okl{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:56px;width:100%;cursor:pointer;user-select:none;font-size:12px;color:#999}' +
+    P + ' label.ll-okl:hover{background:#f1f8e9}' +
+    P + ' input.ll-ok{width:24px;height:24px;margin:0;cursor:pointer;accent-color:#2e7d32}' +
+    P + ' tr.ll-done td{background:#f6fbf3}' + P + ' tr.ll-done label.ll-okl{color:#2e7d32;font-weight:bold}' +
     P + ' th{background:#f5f7f8;position:sticky;top:0}' +
     P + ' tr.ll-day td{background:#e8f5e9;font-weight:bold;color:#1b5e20}' +
     P + ' tr.ll-cx td{color:#999;text-decoration:line-through}' +
     P + ' tr.ll-cx td.ll-keep{text-decoration:none}' +
-    P + ' td .ll-ed{width:100%;padding:2px 4px;border:1px solid transparent;border-radius:4px;font-size:13px;background:transparent;font-family:inherit;color:inherit}' +
+    P + ' td .ll-ed{width:100%;padding:3px 5px;border:1px solid transparent;border-radius:4px;font-size:15px;background:transparent;font-family:inherit;color:inherit}' +
     P + ' td textarea.ll-ed{resize:none;overflow:hidden;line-height:1.45;white-space:pre-wrap}' +
     P + ' td .ll-ed:hover,' + P + ' td .ll-ed:focus{border-color:#ccc;background:#fff}' +
     P + ' .ll-kind{display:inline-block;border-radius:10px;padding:0 7px;font-size:12px;color:#fff;background:#2e7d32}' +
     P + ' .ll-kind.k-遲到{background:#ef6c00}' + P + ' .ll-kind.k-早退{background:#6a1b9a}' + P + ' .ll-kind.k-線上{background:#1565c0}' +
-    P + ' .ll-msg{white-space:pre-wrap;background:#f1f8e9;border-radius:6px;padding:4px 6px;margin-top:3px;font-size:12px;color:#33691e}' +
+    P + ' .ll-msg{white-space:pre-wrap;background:#f1f8e9;border-radius:6px;padding:5px 8px;margin-top:4px;font-size:14px;color:#33691e}' +
     P + ' .ll-x{cursor:pointer;border:none;background:none;color:#c62828;font-size:15px}';
 
   var panel = document.createElement('div');
@@ -3443,7 +3453,7 @@ if (window.__olhTest) (function (__mount) {
     '<button class="ll-btn sec ll-xlsx">⬇ 下載 Excel</button><button class="ll-btn sec ll-addbtn">＋ 手動新增</button></div>' +
     '<div class="ll-add ll-box" style="display:none">日期 <input type="date" class="ll-a-date"> 學生 <input type="text" class="ll-a-stu" style="width:80px"> ' +
     '班別 <input type="text" class="ll-a-cls" style="width:90px"> <select class="ll-a-kind"><option>請假</option><option>遲到</option><option>早退</option><option>線上</option></select><br>' +
-    '原因 <input type="text" class="ll-a-rsn" style="width:140px"> 備註 <input type="text" class="ll-a-note" style="width:160px"> <button class="ll-btn ll-a-save">新增</button></div>' +
+    '原因 <input type="text" class="ll-a-rsn" style="width:140px"> <button class="ll-btn ll-a-save">新增</button></div>' +
     '<div class="ll-st ll-muted"></div>' +
     '<div class="ll-out"></div>' +
     '</div>';
@@ -3523,12 +3533,12 @@ if (window.__olhTest) (function (__mount) {
     var h = '<div class="ll-box">' + md(state.from) + (state.to !== state.from ? '～' + md(state.to) : '') + '：共 <b>' + n + '</b> 筆' +
       (open ? '，<b style="color:#c62828">' + open + '</b> 筆還沒確認' : '，全部確認了 ✔') + '</div>';
     if (!rows.length) { $('.ll-out').innerHTML = h + '<div class="ll-muted">這段時間沒有請假紀錄。</div>'; return; }
-    h += '<table><tr><th style="width:28px">確認</th><th style="width:78px">學生</th><th style="width:120px">班別</th><th>類型／原因／家長訊息</th><th style="width:110px">備註</th><th style="width:20px"></th></tr>';
+    h += '<table><tr><th style="width:64px;text-align:center">確認</th><th style="width:96px">學生</th><th style="width:150px">班別</th><th>類型／原因／家長訊息</th><th style="width:24px"></th></tr>';
     var day = '';
     rows.forEach(function (r) {
-      if (r.date !== day) { day = r.date; h += '<tr class="ll-day"><td colspan="6">🗓 ' + md(day) + '（' + esc(r.wd) + '）</td></tr>'; }
-      h += '<tr data-id="' + r.id + '"' + (r.cancelled ? ' class="ll-cx"' : '') + '>' +
-        '<td class="ll-keep"><input type="checkbox" class="ll-ok"' + (r.confirmed ? ' checked' : '') + ' title="' + (r.confirmed ? '確認時間 ' + esc(r.confirmed_at) : '打勾＝已確認') + '"></td>' +
+      if (r.date !== day) { day = r.date; h += '<tr class="ll-day"><td colspan="5">🗓 ' + md(day) + '（' + esc(r.wd) + '）</td></tr>'; }
+      h += '<tr data-id="' + r.id + '" class="' + (r.cancelled ? 'll-cx' : '') + (r.confirmed ? ' ll-done' : '') + '">' +
+        '<td class="ll-keep ll-okcell"><label class="ll-okl" title="' + (r.confirmed ? '確認時間 ' + esc(r.confirmed_at) : '點一下＝已確認') + '"><input type="checkbox" class="ll-ok"' + (r.confirmed ? ' checked' : '') + '><span>' + (r.confirmed ? '已確認' : '未確認') + '</span></label></td>' +
         '<td><input class="ll-ed" data-f="student" value="' + esc(r.student) + '" placeholder="（姓名？）"></td>' +
         /* 班別：一班一行，整個班名都看得到 */
         '<td><textarea class="ll-ed" data-f="cls" rows="' + Math.max(1, String(r.cls || '').split('、').length) + '" placeholder="班別">' + esc(String(r.cls || '').split('、').join('\n')) + '</textarea></td>' +
@@ -3536,7 +3546,6 @@ if (window.__olhTest) (function (__mount) {
         (r.cancelled ? ' <b class="ll-keep" style="color:#c62828">已取消</b>' : '') +
         (r.parent ? '<div class="ll-muted">' + esc(r.parent) + '　' + esc(String(r.received).slice(5)) + '</div>' : '<div class="ll-muted">手動新增　' + esc(String(r.received).slice(5)) + '</div>') +
         (r.message ? '<div class="ll-msg">' + esc(r.message) + '</div>' : '') + '</td>' +
-        '<td class="ll-keep"><input class="ll-ed" data-f="note" value="' + esc(r.note) + '" placeholder="備註"></td>' +
         '<td class="ll-keep"><button class="ll-x" title="刪除這筆（認錯的時候用）">✕</button></td></tr>';
     });
     $('.ll-out').innerHTML = h + '</table>';
@@ -3572,9 +3581,9 @@ if (window.__olhTest) (function (__mount) {
   $('.ll-addbtn').onclick = function () { var a = $('.ll-add'); a.style.display = a.style.display === 'none' ? 'block' : 'none'; if (!$('.ll-a-date').value) $('.ll-a-date').value = ymd(new Date()); };
   $('.ll-a-save').onclick = async function () {
     var body = { date: $('.ll-a-date').value, student: $('.ll-a-stu').value.trim(), cls: $('.ll-a-cls').value.trim(),
-      kind: $('.ll-a-kind').value, reason: $('.ll-a-rsn').value.trim(), note: $('.ll-a-note').value.trim() };
+      kind: $('.ll-a-kind').value, reason: $('.ll-a-rsn').value.trim(), note: '' };
     if (!body.date || !body.student) { alert('請填日期和學生姓名。'); return; }
-    try { await srv('/leaves', body); ['.ll-a-stu', '.ll-a-cls', '.ll-a-rsn', '.ll-a-note'].forEach(function (s) { $(s).value = ''; }); reload(); }
+    try { await srv('/leaves', body); ['.ll-a-stu', '.ll-a-cls', '.ll-a-rsn'].forEach(function (s) { $(s).value = ''; }); reload(); }
     catch (e) { alert('沒有存到：' + e.message); }
   };
 
