@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.35', VERSION_DATE = '2026/10/20';
+  var VERSION = '1.36', VERSION_DATE = '2026/10/21';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -937,12 +937,25 @@
     if (failed.length) lines.push('上標籤失敗：' + failed.join('；'));
 
     h += '<button class="lt-btn lt-sec lt-copy">複製結果（可貼到 Excel / LINE）</button>';
+    h += '<div style="margin-top:10px"><button class="lt-btn lt-endtask" style="background:#2e7d32;border-color:#2e7d32;color:#fff">✔ 結束此階段任務（清空，準備下一批）</button></div>';
     $('.lt-out').innerHTML = h;
+    $('.lt-endtask').onclick = endTask1;
     if (chk.extraItems.length) wireExtra(chk.extraItems, state.tagId, name);
     $('.lt-copy').onclick = function () {
       var text = '帳號：' + (state.botName || '') + '\n標籤：' + name + '\n' + lines.join('\n');
       navigator.clipboard.writeText(text).then(function () { alert('已複製！'); }, function () { prompt('請手動複製：', text); });
     };
+  }
+
+  /* 結束此階段任務：名單、標籤、結果都清空（上標籤的紀錄已經記到總表了） */
+  function endTask1() {
+    if (state.busy) return;
+    state.names = []; state.rows = null; state.tagId = null;
+    $('.lt-paste').value = ''; $('.lt-file').value = ''; $('.lt-names').innerHTML = '';
+    $('.lt-filter').value = ''; fillTags(); $('.lt-tag').selectedIndex = -1;
+    $('.lt-out').innerHTML = ''; $('.lt-apply').disabled = true; hideBar($('.lt-bar1'));
+    $('.lt-prog').textContent = '✔ 已結束這一批：名單、標籤、結果都清空了，可以放下一批名單。';
+    getTags().then(function (t) { state.tags = t; fillTags(); $('.lt-tag').selectedIndex = -1; });
   }
 
   /* 多出來的人：取消勾選的，按按鈕把這個標籤拿掉（重新讀最新標籤，只拿掉這一個，其他保留） */
@@ -1201,6 +1214,18 @@
     st2.targets = null; busy2(false);
   };
 
+  /* 依名稱開頭：結束此階段任務，全部清空回到一開始 */
+  function endTask2() {
+    if (st2.busy) return;
+    st2.all = null; st2.groups = null; st2.exclude = {}; st2.cPick = {}; st2.uncheck = {}; st2.targets = null; st2.newName = ''; st2.newTagId = null;
+    q2('.lt-prefix').value = ''; q2('.p-newtag').value = ''; q2('.p-tagnote').innerHTML = ''; q2('.p-filter').value = '';
+    q2('.p-sum').innerHTML = ''; q2('.p-ex').innerHTML = ''; q2('.p-prog1').textContent = ''; q2('.p-out').innerHTML = '';
+    ['.p-s2', '.p-s3', '.p-s4'].forEach(function (s) { q2(s).style.display = 'none'; });
+    q2('.p-apply').disabled = true; hideBar(q2('.p-bar')); hideBar(q2('.p-bar1'));
+    prog2('');
+    q2('.p-sum').innerHTML = '<div class="lt-muted">✔ 已結束這一批，全部清空了，可以輸入下一個名稱開頭。</div>';
+  }
+
   function renderResult2(targets, fresh, tagId) {
     var byId = {}; fresh.forEach(function (c) { byId[c.contactId] = c; });
     var want = {}; targets.forEach(function (t) { want[t.contactId] = 1; });
@@ -1232,7 +1257,9 @@
     if (extra.length) h += '<div class="lt-box"><span class="lt-warn">多出來的（' + extra.length + '）</span>：有新標籤，但不在這次名單裡：<div class="lt-scroll">' + extra.map(esc).join('<br>') +
       '</div><div class="lt-muted">如果新標籤以前就存在，這些可能是以前上的。</div></div>';
     h += '<button class="lt-btn lt-sec p-copy">複製結果（可貼到 Excel）</button>';
+    h += '<div style="margin-top:10px"><button class="lt-btn p-endtask" style="background:#2e7d32;border-color:#2e7d32;color:#fff">✔ 結束此階段任務（清空，準備下一批）</button></div>';
     q2('.p-out').innerHTML = h;
+    q2('.p-endtask').onclick = endTask2;
     q2('.p-copy').onclick = function () {
       var lines = ['帳號\t' + (state.botName || ''), '標籤\t' + st2.newName, '', '類型\tLINE 名稱\t結果'];
       targets.forEach(function (t) { lines.push(({ A: '開頭', B: '中間', C: '兩碼' }[t.group] || '') + '\t' + t.nick + '\t' + (byId[t.contactId] && (byId[t.contactId].tagIds || []).indexOf(tagId) >= 0 ? '有上到' : '沒上到 ' + (t.result || ''))); });
@@ -1740,7 +1767,13 @@
   $('.lg-paste').oninput = function () { if (this.value.trim()) setTable(parseText(this.value)); };
   $('.lg-file').onchange = async function () {
     var f = this.files[0]; if (!f) return;
-    try { setTable(/\.xlsx$/i.test(f.name) ? await readXlsx(await f.arrayBuffer()) : parseText(await f.text())); }
+    try {
+      var rows = /\.xlsx$/i.test(f.name) ? await readXlsx(await f.arrayBuffer()) : parseText(await f.text());
+      /* 把 Excel 內容放進下面的框，看得到檔案裡有哪些人（也可以直接在框裡改） */
+      $('.lg-paste').value = rows.filter(function (r) { return r.some(function (x) { return String(x == null ? '' : x).trim(); }); })
+        .map(function (r) { return r.map(function (x) { return String(x == null ? '' : x).replace(/[\t\r\n]+/g, ' '); }).join('\t'); }).join('\n');
+      setTable(rows);
+    }
     catch (e) { alert('讀取失敗：' + e.message + '\n可以改用「複製貼上」。'); }
   };
   applyMode();
@@ -2823,7 +2856,13 @@
   $('.lg-paste').oninput = function () { if (this.value.trim()) setTable(parseText(this.value)); };
   $('.lg-file').onchange = async function () {
     var f = this.files[0]; if (!f) return;
-    try { setTable(/\.xlsx$/i.test(f.name) ? await readXlsx(await f.arrayBuffer()) : parseText(await f.text())); }
+    try {
+      var rows = /\.xlsx$/i.test(f.name) ? await readXlsx(await f.arrayBuffer()) : parseText(await f.text());
+      /* 把 Excel 內容放進下面的框，看得到檔案裡有哪些人（也可以直接在框裡改） */
+      $('.lg-paste').value = rows.filter(function (r) { return r.some(function (x) { return String(x == null ? '' : x).trim(); }); })
+        .map(function (r) { return r.map(function (x) { return String(x == null ? '' : x).replace(/[\t\r\n]+/g, ' '); }).join('\t'); }).join('\n');
+      setTable(rows);
+    }
     catch (e) { alert('讀取失敗：' + e.message + '\n可以改用「複製貼上」。'); }
   };
 
