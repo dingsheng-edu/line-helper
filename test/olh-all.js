@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.36', VERSION_DATE = '2026/10/21';
+  var VERSION = '1.37', VERSION_DATE = '2026/10/21';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -2629,11 +2629,12 @@
     '<select class="lg-class-sel" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:15px"></select>' +
     '<input type="text" class="lg-class" placeholder="輸入班別，例如：高二數學A班" style="display:none;width:100%;margin-top:6px;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:15px">' +
     '<div class="lg-muted">會放進訊息裡的 [班別]。</div>' +
-    '<div class="lg-q" style="margin-top:12px;padding:8px 10px;border:2px solid #ffb74d;border-radius:8px;background:#fff8e1"><b style="font-size:15px">需要補考／輔導嗎？</b>' +
+    '<div class="lg-red lg-cls-need" style="font-size:13px">← 一定要先選班別，才能往下一步（補考／輔導、③ 訊息範本、④ 預覽）。</div>' +
+    '<div class="lg-q lg-locked" style="margin-top:12px;padding:8px 10px;border:2px solid #ffb74d;border-radius:8px;background:#fff8e1"><b style="font-size:15px">需要補考／輔導嗎？</b>' +
     '<label style="cursor:pointer;margin-left:12px;font-size:15px"><input type="radio" name="lg-rtq" value="yes"> 要</label>' +
     '<label style="cursor:pointer;margin-left:12px;font-size:15px"><input type="radio" name="lg-rtq" value="no"> 不要</label>' +
     '<div class="lg-red lg-rtq-need" style="font-size:13px">← 一定要選「要」或「不要」，才能往下一步（③ 訊息範本、④ 預覽）。</div></div>' +
-    '<div class="lg-retest-box" style="display:none;margin:6px 0 0 22px">' +
+    '<div class="lg-retest-box lg-locked" style="display:none;margin:6px 0 0 22px">' +
     '<div>輔導課：<select class="lg-tu-cls" style="padding:4px;border:1px solid #ccc;border-radius:6px;font-size:14px"></select></div>' +
     '<div class="lg-tu-hint" style="margin-top:4px;font-size:13px"></div>' +
     '<div class="lg-tu-list" style="margin-top:2px"></div>' +
@@ -2713,8 +2714,16 @@
     var other = this.value === CLASS_OTHER;
     showClassInput(other);
     if (other) $('.lg-class').focus();
-    autoTutor();
+    autoTutor(); updateLocks();
   };
+  $('.lg-class').addEventListener('input', function () { updateLocks(); });
+  /* 防呆：沒選班別 → 補考／輔導、③、④ 都鎖住；選了班別但還沒回答補考／輔導 → ③、④ 鎖住 */
+  function updateLocks() {
+    var hasCls = !!currentClass(), hasQ = !!answer('lg-rtq');
+    $('.lg-cls-need').style.display = hasCls ? 'none' : '';
+    panel.querySelectorAll('.lg-q, .lg-retest-box').forEach(function (s) { s.classList.toggle('lg-locked', !hasCls); });
+    panel.querySelectorAll('.lg-s3, .lg-s4').forEach(function (s) { s.classList.toggle('lg-locked', !(hasCls && hasQ)); });
+  }
   function currentClass() {
     var v = $('.lg-class-sel').value;
     return v === CLASS_OTHER ? $('.lg-class').value.trim() : v;
@@ -2725,8 +2734,8 @@
     CLASS_GROUPS.forEach(function (g) { all = all.concat(g[1]); });
     var hit = all.filter(function (c) { return c === guess; })[0] || all.filter(function (c) { return c === guess + '班'; })[0];
     if (!hit) { var starts = all.filter(function (c) { return c.indexOf(guess) === 0; }); if (starts.length === 1) hit = starts[0]; }
-    if (hit) { $('.lg-class-sel').value = hit; showClassInput(false); autoTutor(); return hit; }
-    $('.lg-class-sel').value = CLASS_OTHER; showClassInput(true); $('.lg-class').value = guess;
+    if (hit) { $('.lg-class-sel').value = hit; showClassInput(false); autoTutor(); updateLocks(); return hit; }
+    $('.lg-class-sel').value = CLASS_OTHER; showClassInput(true); $('.lg-class').value = guess; updateLocks();
     return guess + '（選單裡沒有，放在「其他」）';
   }
   $('.lg-rt-text').value = RETEST_SENTENCE;
@@ -2770,7 +2779,7 @@
         var yes = answer(name) === 'yes';
         $(box).style.display = yes ? 'block' : 'none';
         $('.' + name + '-need').style.display = 'none';
-        panel.querySelectorAll('.lg-s3, .lg-s4').forEach(function (s) { s.classList.remove('lg-locked'); });
+        updateLocks();
         if (yes) { if (!$('.lg-tu-date').value) autoTutor(); else renderTutorHint(); }
       };
     });
@@ -3120,7 +3129,7 @@
     $('.lg-paste').value = ''; $('.lg-file').value = ''; $('.lg-info').innerHTML = ''; $('.lg-chips').innerHTML = ''; state.table = null;
     $('.lg-class-sel').value = ''; $('.lg-class').value = ''; showClassInput(false);
     panel.querySelectorAll('input[name=lg-rtq]').forEach(function (r) { r.checked = false; });
-    $('.lg-retest-box').style.display = 'none'; $('.lg-rtq-need').style.display = '';
+    $('.lg-retest-box').style.display = 'none'; $('.lg-rtq-need').style.display = ''; updateLocks();
     $('.lg-tu-cls').value = ''; $('.lg-tu-date').value = ''; $('.lg-tu-start').value = ''; $('.lg-tu-end').value = '';
     showTutorTime(); renderTutorHint();
     panel.querySelector('input[name=lg-rt][value=avg]').checked = true; $('.lg-retest-min').value = '60';
@@ -3366,6 +3375,7 @@ if (window.__olhTest) (function (__mount) {
     var j = null;
     try { j = await r.json(); } catch (e) { }
     /* 中間的 ngrok 有時會把錯誤代碼改成 200，所以看內容有沒有 error 判斷 */
+    if (j && /密碼不對/.test(j.error || '')) { save(KEY_KEY, ''); if (typeof refreshSetup === 'function') refreshSetup(true); throw new Error('密碼不對：這台電腦記住的密碼和補習班電腦上的不一樣，已經清掉了，請在上面重新輸入。'); }
     if (!r.ok || !j || j.error) throw new Error((j && j.error) || ('補習班電腦回應錯誤 ' + r.status));
     return j;
   }
@@ -3421,10 +3431,10 @@ if (window.__olhTest) (function (__mount) {
   panel.id = PANEL_ID;
   panel.innerHTML = '<style>' + css + '</style>' +
     '<div class="ll-body">' +
-    '<div class="ll-setup ll-box"><b>第一次使用：輸入請假總表的密碼</b>（問管理者，每台電腦輸入一次就會記住）<br>' +
+    '<div class="ll-setup ll-box"><b class="ll-setup-t">第一次使用：輸入請假總表的密碼</b>（問管理者，每台電腦輸入一次就會記住）<br>' +
     '<input type="password" class="ll-key" placeholder="密碼" style="width:200px"> <button class="ll-btn ll-keysave">儲存</button>' +
     '<details style="margin-top:4px"><summary class="ll-muted">進階設定</summary>伺服器網址：<input type="text" class="ll-srv" style="width:330px"></details></div>' +
-    '<div class="ll-muted">家長在 <b>高群</b> LINE 傳請假訊息，機器人會自動記在這裡（約 10 秒內）。打勾＝櫃台已確認／已處理。</div>' +
+    '<div class="ll-muted"><button class="ll-btn sec ll-rekey" style="float:right;font-size:12px;padding:2px 8px">🔑 換密碼</button>家長在 <b>高群</b> LINE 傳請假訊息，機器人會自動記在這裡（約 10 秒內）。打勾＝櫃台已確認／已處理。</div>' +
     '<div style="margin-top:6px"><button class="ll-btn sec ll-r" data-r="today">今天</button><button class="ll-btn sec ll-r" data-r="tomorrow">明天</button>' +
     '<button class="ll-btn sec ll-r" data-r="week">這 7 天</button><button class="ll-btn sec ll-r" data-r="past">過去 30 天</button> ' +
     '<input type="date" class="ll-from"> ～ <input type="date" class="ll-to"> <button class="ll-btn ll-load">查詢</button></div>' +
@@ -3443,8 +3453,9 @@ if (window.__olhTest) (function (__mount) {
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
   var state = { rows: [], from: '', to: '' };
 
-  function refreshSetup() {
+  function refreshSetup(wrong) {
     $('.ll-setup').style.display = load(KEY_KEY) ? 'none' : 'block';
+    if (wrong) { $('.ll-setup-t').innerHTML = '<span style="color:#c62828">密碼不對，請重新輸入請假總表的密碼</span>'; $('.ll-key').focus(); }
     $('.ll-srv').value = server();
   }
   $('.ll-keysave').onclick = function () {
@@ -3454,6 +3465,7 @@ if (window.__olhTest) (function (__mount) {
     $('.ll-key').value = ''; refreshSetup(); reload();
   };
   refreshSetup();
+  $('.ll-rekey').onclick = function () { save(KEY_KEY, ''); $('.ll-setup-t').textContent = '重新輸入請假總表的密碼'; refreshSetup(); $('.ll-key').focus(); };
 
   function setRange(r) {
     var t = ymd(new Date()), f = t, to = t;
