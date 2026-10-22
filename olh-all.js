@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.43', VERSION_DATE = '2026/10/22';
+  var VERSION = '1.44', VERSION_DATE = '2026/10/22';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1686,7 +1686,7 @@
     var nPh = !each && state.photos ? state.photos.length : 0;
     box.innerHTML = '<div class="lg-muted">👀 訊息預覽（範例：' + SAMPLE_NAME + '）</div>' +
       '<div class="lg-msg" style="max-width:360px">' + (txt.trim() ? esc(txt) : '<span class="lg-muted">（沒有文字，只發照片）</span>') +
-      (nPh ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + state.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>';
+      (nPh ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + state.photos.map(function (f) { return photoThumb(f, 110); }).join('') + '</div>' : '') + '</div>';
     box.style.display = 'block';
   }
   panel.addEventListener('input', function (e) { if (!e.target.closest('.lg-out')) setTimeout(renderLivePreview, 0); });
@@ -1785,15 +1785,25 @@
 
   /* ========== 附加照片（只有統一訊息） ========== */
   state.photos = [];
+  /* 照片縮圖：整張都看得到（不裁切）；點一下看大圖 */
   function photoThumb(f, size) {
     if (!f.__url) f.__url = URL.createObjectURL(f);
-    return '<img src="' + f.__url + '" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:6px;border:1px solid #ddd">';
+    return '<img class="lg-ph-img" src="' + f.__url + '" data-n="' + esc(f.name || '') + '" title="點一下看大圖" style="width:' + size + 'px;height:' + size + 'px;object-fit:contain;background:#fff;border-radius:6px;border:1px solid #ddd;cursor:zoom-in">';
   }
+  panel.addEventListener('click', function (e) {
+    var img = e.target.closest && e.target.closest('img.lg-ph-img'); if (!img) return;
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out';
+    ov.innerHTML = '<img src="' + img.src + '" style="max-width:92vw;max-height:84vh;object-fit:contain;background:#fff;border-radius:8px;box-shadow:0 6px 30px rgba(0,0,0,.5)">' +
+      '<div style="color:#fff;margin-top:10px;font:14px \'Microsoft JhengHei\',sans-serif">' + esc(img.dataset.n || '') + '　（點任何地方關閉）</div>';
+    ov.onclick = function () { ov.remove(); };
+    document.body.appendChild(ov);
+  });
   function renderThumbs() {
     $('.lg-thumbs').innerHTML = state.photos.map(function (f, k) {
-      return '<div style="position:relative">' + photoThumb(f, 70) +
-        '<button class="lg-ph-x" data-k="' + k + '" title="拿掉" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#c62828;color:#fff;cursor:pointer;line-height:20px;padding:0">×</button>' +
-        '<div class="lg-muted" style="font-size:11px;text-align:center">' + (k + 1) + '</div></div>';
+      return '<div style="position:relative;width:150px">' + photoThumb(f, 150) +
+        '<button class="lg-ph-x" data-k="' + k + '" title="拿掉" style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;font-size:15px;border-radius:50%;border:none;background:#c62828;color:#fff;cursor:pointer;line-height:20px;padding:0">×</button>' +
+        '<div class="lg-muted" style="font-size:12px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(f.name || '') + '">' + (k + 1) + '. ' + esc(f.name || '') + '</div></div>';
     }).join('');
     $('.lg-thumbs').querySelectorAll('.lg-ph-x').forEach(function (b) {
       b.onclick = function () { state.photos.splice(+this.dataset.k, 1); renderThumbs(); photosChanged(); };
@@ -1868,7 +1878,7 @@
           (c.note ? ' <span class="lg-warn">（' + esc(c.note) + '）</span>' : '') + '</label>';
       });
       if (!it.block) h += '<div class="lg-msg">' + (it.text.trim() ? esc(it.text) : '<span class="lg-muted">（沒有文字，只發照片）</span>') +
-        (it.photos && it.photos.length ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + it.photos.map(function (f) { return photoThumb(f, 48); }).join('') + '</div>' : '') + '</div>';
+        (it.photos && it.photos.length ? '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">' + it.photos.map(function (f) { return photoThumb(f, 90); }).join('') + '</div>' : '') + '</div>';
       h += '</td></tr>';
     });
     h += '</table>';
