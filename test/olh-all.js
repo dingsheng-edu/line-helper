@@ -3590,22 +3590,23 @@
      只在高群帳號做（請假只有高群的機器人在記）；只讀聯絡人，不會打開聊天室。每筆只試一次。 */
   var GAOQUN = 'U6e93b8aa5105cd6744edb4c7dc78923e', tried = {};
   /* 家長的 LINE 名稱（例如「韶音⭐️」）在後台搜尋常常找不到（搜尋只比對後台名稱），
-     所以找不到時，改成讀一次全部聯絡人（只讀，約 10～30 秒），用家長的 LINE ID 對到後台名稱。
+     所以找不到時，改成讀一次全部聯絡人（只讀，約 10～30 秒），用家長的 LINE 名稱對到後台名稱。
+     （後台的聯絡人 ID 和機器人收到的 LINE ID 不一樣，不能用 ID 對）
      讀到的對照表只放在這個分頁 30 分鐘（關掉分頁就清掉），不用每次都重讀。 */
   var NICK_KEY = 'll-nicks-' + GAOQUN, nickMap = null;
-  async function nickByUid(uid) {
-    if (!uid) return '';
+  async function nicksByName(nm) {
+    if (!nm) return [];
     if (!nickMap) {
       try { var c = JSON.parse(sessionStorage.getItem(NICK_KEY) || 'null'); if (c && Date.now() - c.at < 30 * 60000) nickMap = c.map; } catch (e) { }
     }
-    if (!nickMap || !(uid in nickMap)) {
+    if (!nickMap) {
       var map = {}, next = null, guard = 0, n = 0;
       do {
         $('.ll-st').textContent = '正在讀後台聯絡人，用家長 LINE 找學生姓名… ' + n + ' 人';
         var res = await fetch('/api/v2/bots/' + GAOQUN + '/contacts?query=&limit=50' + (next ? '&next=' + encodeURIComponent(next) : ''), { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
         if (!res.ok) break;
         var j = await res.json();
-        (j.list || []).forEach(function (c) { n++; var p = c.profile || {}; if (p.nickname) map[c.contactId] = p.nickname; });
+        (j.list || []).forEach(function (c) { n++; var p = c.profile || {}; if (p.nickname && p.name) (map[p.name] = map[p.name] || []).push(p.nickname); });
         next = j.next; guard++;
         await new Promise(function (r) { setTimeout(r, 120); });
       } while (next && guard < 1000);
@@ -3613,7 +3614,7 @@
       try { sessionStorage.setItem(NICK_KEY, JSON.stringify({ at: Date.now(), map: map })); } catch (e) { }
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
     }
-    return nickMap[uid] || '';
+    return (nickMap[nm] || []).slice(0, 5);
   }
   async function guessNames() {
     if ((location.pathname.split('/')[1] || '') !== GAOQUN) return;
@@ -3624,9 +3625,9 @@
       try {
         var nicks = [];
         var res = await fetch('/api/v2/bots/' + GAOQUN + '/contacts?query=' + encodeURIComponent(r.parent) + '&limit=50', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
-        if (res.ok) nicks = ((await res.json()).list || []).filter(function (c) { var p = c.profile || {}; return (c.contactId === r.uid || p.name === r.parent) && p.nickname; })
+        if (res.ok) nicks = ((await res.json()).list || []).filter(function (c) { var p = c.profile || {}; return p.name === r.parent && p.nickname; })
           .map(function (c) { return c.profile.nickname; });
-        if (!nicks.length && r.uid) { var nk = await nickByUid(r.uid); if (nk) nicks = [nk]; }
+        if (!nicks.length) nicks = await nicksByName(r.parent);
         if (!nicks.length) continue;
         var g = await srv('/leaves/' + r.id + '/guess', { nicknames: nicks });
         if (g.student !== r.student || g.note !== r.note || g.cls !== r.cls) { r.student = g.student || ''; r.note = g.note || ''; r.cls = g.cls || ''; changed = true; }
