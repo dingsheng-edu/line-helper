@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.41', VERSION_DATE = '2026/10/21';
+  var VERSION = '1.42', VERSION_DATE = '2026/10/22';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -2099,14 +2099,16 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000];
+    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
     var cur = null;
-    for (var i = 0; i < jobs.length; i++) {
-      var job = jobs[i], it = job.it, c = job.c;
+    /* 發一批（第一次發、自動重發都用這一段） */
+    async function sendBatch(list, label, again) {
+    for (var i = 0; i < list.length; i++) {
+      var job = list[i], it = job.it, c = job.c;
       if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
-      state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
+      state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
         if (!byStudent[it.student]) {
           byStudent[it.student] = {};
@@ -2116,20 +2118,20 @@
         if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒發）'; continue; }
         if (alreadySent(c.contactId, it.key)) { c.result = '略過：24 小時內已發過一樣的內容'; continue; }
         /* 這一則要發的內容：文字＋照片；重發時只發還沒送到的部分 */
-        if (!resendJobs || !c.parts) c.parts = buildParts(it);
+        if (!(resendJobs || again) || !c.parts) c.parts = buildParts(it);
         var failKind = '', st = 0;
         for (var pi = 0; pi < c.parts.length; pi++) {
           var part = c.parts[pi];
           if (part.ok) continue;
           if (state.stop) { failKind = 'stop'; break; }
           cur = part;
-          if (c.parts.length > 1) state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick + '（' + partName(part) + '）');
+          if (c.parts.length > 1) state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick + '（' + partName(part) + '）');
           part.sendId = newSendId(); part.sentAt = Date.now(); part.unsure = false;
           st = await sendPart(c.contactId, it, part); var tries = 0;
           /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
           while (st === 429 && tries < WAITS.length && !state.stop) {
             gap = 3000;
-            state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
+            state.sbar(label, i, list.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
             await sleep(WAITS[tries]); tries++;
             part.sendId = newSendId(); part.sentAt = Date.now();
             st = await sendPart(c.contactId, it, part);
@@ -2151,10 +2153,34 @@
       }
       await sleep(gap);
     }
+    }
+    await sendBatch(jobs, label, false);
     state.sbar(label, jobs.length, jobs.length, state.stop ? '已停止' : '發送完畢，接著到聊天室確認送達…');
     sb.querySelector('.lg-sb-stop').style.display = 'none';
     stopBtn.style.display = 'none';
     await verifySent(jobs);
+    /* 自動重發：發太快被擋、或聊天室裡找不到的，等一下自動再發，不用自己按。
+       自動試 3 次（等 30 秒、60 秒、2 分鐘）還沒送出的，才算「未發送成功」。按「停止發送」就不再自動重發。 */
+    var AUTO = [30000, 60000, 120000], sbStop = sb.querySelector('.lg-sb-stop');
+    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit; ar++) {
+      var again = jobs.filter(function (j) { return j.c.resend === 'safe'; });
+      if (!again.length) break;
+      sbStop.style.display = ''; sbStop.disabled = false; sbStop.textContent = '停止（不要自動重發）';
+      var alabel = '自動重發（第 ' + (ar + 1) + ' / ' + AUTO.length + ' 次）';
+      for (var w = AUTO[ar] / 1000; w > 0 && !state.stop; w--) {
+        state.sbar(alabel, 0, again.length, '有 ' + again.length + ' 則還沒送出（可能發太快被 LINE 擋），' + w + ' 秒後自動重發，不用按任何按鈕…');
+        await sleep(1000);
+      }
+      if (state.stop) break;
+      again.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
+      gap = Math.max(gap, 3000);
+      await sendBatch(again, alabel, true);
+      sbStop.style.display = 'none';
+      state.sbar(alabel, again.length, again.length, '重發完畢，到聊天室確認送達…');
+      await verifySent(again);
+      state.autoRetried = (state.autoRetried || 0) + again.length;
+    }
+    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
     state.busy = false;
     updateTask(jobs, !!resendJobs);
@@ -3224,13 +3250,15 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000];
+    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
-    for (var i = 0; i < jobs.length; i++) {
-      var job = jobs[i], it = job.it, c = job.c;
+    /* 發一批（第一次發、自動重發都用這一段） */
+    async function sendBatch(list, label, again) {
+    for (var i = 0; i < list.length; i++) {
+      var job = list[i], it = job.it, c = job.c;
       if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
-      state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
+      state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
         if (!byStudent[it.student]) {
           byStudent[it.student] = {};
@@ -3244,7 +3272,7 @@
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
-          state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
+          state.sbar(label, i, list.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
           await sleep(WAITS[tries]); tries++;
           c.sendId = newSendId(); c.sentAt = Date.now();
           st = await sendText(c.contactId, it.text, c.sendId);
@@ -3257,10 +3285,34 @@
       }
       await sleep(gap);
     }
+    }
+    await sendBatch(jobs, label, false);
     state.sbar(label, jobs.length, jobs.length, state.stop ? '已停止' : '發送完畢，接著到聊天室確認送達…');
     sb.querySelector('.lg-sb-stop').style.display = 'none';
     stopBtn.style.display = 'none';
     await verifySent(jobs);
+    /* 自動重發：發太快被擋、或聊天室裡找不到的，等一下自動再發，不用自己按。
+       自動試 3 次（等 30 秒、60 秒、2 分鐘）還沒送出的，才算「未發送成功」。按「停止發送」就不再自動重發。 */
+    var AUTO = [30000, 60000, 120000], sbStop = sb.querySelector('.lg-sb-stop');
+    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit; ar++) {
+      var again = jobs.filter(function (j) { return j.c.resend === 'safe'; });
+      if (!again.length) break;
+      sbStop.style.display = ''; sbStop.disabled = false; sbStop.textContent = '停止（不要自動重發）';
+      var alabel = '自動重發（第 ' + (ar + 1) + ' / ' + AUTO.length + ' 次）';
+      for (var w = AUTO[ar] / 1000; w > 0 && !state.stop; w--) {
+        state.sbar(alabel, 0, again.length, '有 ' + again.length + ' 則還沒送出（可能發太快被 LINE 擋），' + w + ' 秒後自動重發，不用按任何按鈕…');
+        await sleep(1000);
+      }
+      if (state.stop) break;
+      again.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; j.c.sendId = null; });
+      gap = Math.max(gap, 3000);
+      await sendBatch(again, alabel, true);
+      sbStop.style.display = 'none';
+      state.sbar(alabel, again.length, again.length, '重發完畢，到聊天室確認送達…');
+      await verifySent(again);
+      state.autoRetried = (state.autoRetried || 0) + again.length;
+    }
+    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
     state.busy = false;
     updateTask(jobs, !!resendJobs);
