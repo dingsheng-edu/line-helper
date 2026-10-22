@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.38', VERSION_DATE = '2026/10/21';
+  var VERSION = '1.42', VERSION_DATE = '2026/10/22';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1909,17 +1909,29 @@
 
 
   /* 發送前確認：在視窗裡輸入則數（不用瀏覽器的跳出視窗，有些瀏覽器會擋掉） */
-  function askCount(text, n) {
+  /* 確認框：第一次發送用原本的紅框（放在 ④ 下面）；重發／繼續發送用很明顯的大框（放在結果區最上面，④ 鎖住也按得到） */
+  function askCount(text, n, big) {
     return new Promise(function (resolve) {
       var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
       var box = document.createElement('div');
       box.className = 'lg-box lg-ask';
-      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
-      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
-        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
-        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
-        '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
-      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      if (!big) {
+        box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
+        box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
+          '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
+          '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+          '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+        var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      } else {
+        box.style.cssText = 'border:4px solid #c62828;background:#fff;margin:8px 0 12px;padding:12px 14px;border-radius:10px;box-shadow:0 0 0 4px rgba(198,40,40,.18),0 6px 18px rgba(0,0,0,.18)';
+        box.innerHTML = '<div style="background:#c62828;color:#fff;font-size:17px;font-weight:bold;margin:-12px -14px 10px;padding:8px 14px;border-radius:6px 6px 0 0">⚠ 請在這裡確認，才會開始重發</div>' +
+          '<div style="white-space:pre-wrap;font-weight:bold;font-size:15px;color:#222">' + esc(text) + '</div>' +
+          '<input type="number" class="lg-ask-n" placeholder="' + n + '" style="width:110px;font-size:22px;padding:6px;margin-top:8px;border:3px solid #c62828;border-radius:8px;background:#fffde7"> ' +
+          '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828;font-size:16px;padding:8px 18px">確定重發</button>' +
+          '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+        var out = $('.lg-out'); out.insertBefore(box, out.firstChild);
+        if (box.animate) box.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 450, iterations: 2 });
+      }
       var inp = box.querySelector('.lg-ask-n');
       function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
       box.querySelector('.lg-ask-ok').onclick = function () {
@@ -1985,12 +1997,14 @@
     if (state.task.closed) return '<div class="lg-muted" style="margin-top:6px">✔ 這個任務已結束，已記到發送紀錄總表（' + esc(state.task.status) + '）。</div>';
     return need
       ? '<br><button class="lg-btn lg-sec lg-keep" style="color:#c62828;border-color:#c62828">先結束任務（保留未成功的訊息）</button>'
-      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">✔ 結束此階段任務</button>';
+      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">' +
+        (state.task.resendOk ? '✔ 補發完成，結束這個任務' : '✔ 結束此階段任務') + '</button>' +
+        (state.task.resendOk ? '<div style="font-size:13px;font-weight:normal">補發的都送出了，最上面保留的工作已經拿掉。按上面按鈕就結束這個任務。</div>' : '');
   }
   function wireTaskButtons() {
     var end = $('.lg-endtask'), keep = $('.lg-keep');
     if (end) end.onclick = function () {
-      state.task.status = '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
+      state.task.status = state.task.resendOk ? '補發完成（已結束）' : '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
       if (state.pendingId) { OLHX.removePending(state.pendingId); state.pendingId = null; }
       renderSendResult();
     };
@@ -2053,7 +2067,7 @@
         '發到一半被擋的話，剩下的會自動保留，之後可以接著發。\n\n';
     }
     var ans = await askCount(hourWarn + '帳號：' + $('.lg-bot').textContent + '\n即將' + (resuming ? '繼續發送' : resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
-      (jobs[0].it.photos && jobs[0].it.photos.length ? '每位：' + (jobs[0].it.text.trim() ? '文字＋' : '') + jobs[0].it.photos.length + ' 張照片\n' : '') + '送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+      (jobs[0].it.photos && jobs[0].it.photos.length ? '每位：' + (jobs[0].it.text.trim() ? '文字＋' : '') + jobs[0].it.photos.length + ' 張照片\n' : '') + '送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length, !!resendJobs);
     if (!ans) return;
     if (OLHX && (!resendJobs || !state.task || state.task.closed)) {
       if (!resendJobs) { state.task = OLHX.newTask('通知', $('.lg-task').value.trim() || '（未命名）', jobs.length); state.pendingId = null; }
@@ -2085,14 +2099,16 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000];
+    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
     var cur = null;
-    for (var i = 0; i < jobs.length; i++) {
-      var job = jobs[i], it = job.it, c = job.c;
+    /* 發一批（第一次發、自動重發都用這一段） */
+    async function sendBatch(list, label, again) {
+    for (var i = 0; i < list.length; i++) {
+      var job = list[i], it = job.it, c = job.c;
       if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
-      state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
+      state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
         if (!byStudent[it.student]) {
           byStudent[it.student] = {};
@@ -2102,20 +2118,20 @@
         if (!nowNick || nowNick.indexOf(it.student) < 0) { c.result = '失敗：找不到這個 LINE（沒發）'; continue; }
         if (alreadySent(c.contactId, it.key)) { c.result = '略過：24 小時內已發過一樣的內容'; continue; }
         /* 這一則要發的內容：文字＋照片；重發時只發還沒送到的部分 */
-        if (!resendJobs || !c.parts) c.parts = buildParts(it);
+        if (!(resendJobs || again) || !c.parts) c.parts = buildParts(it);
         var failKind = '', st = 0;
         for (var pi = 0; pi < c.parts.length; pi++) {
           var part = c.parts[pi];
           if (part.ok) continue;
           if (state.stop) { failKind = 'stop'; break; }
           cur = part;
-          if (c.parts.length > 1) state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick + '（' + partName(part) + '）');
+          if (c.parts.length > 1) state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick + '（' + partName(part) + '）');
           part.sendId = newSendId(); part.sentAt = Date.now(); part.unsure = false;
           st = await sendPart(c.contactId, it, part); var tries = 0;
           /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
           while (st === 429 && tries < WAITS.length && !state.stop) {
             gap = 3000;
-            state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
+            state.sbar(label, i, list.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
             await sleep(WAITS[tries]); tries++;
             part.sendId = newSendId(); part.sentAt = Date.now();
             st = await sendPart(c.contactId, it, part);
@@ -2137,10 +2153,34 @@
       }
       await sleep(gap);
     }
+    }
+    await sendBatch(jobs, label, false);
     state.sbar(label, jobs.length, jobs.length, state.stop ? '已停止' : '發送完畢，接著到聊天室確認送達…');
     sb.querySelector('.lg-sb-stop').style.display = 'none';
     stopBtn.style.display = 'none';
     await verifySent(jobs);
+    /* 自動重發：發太快被擋、或聊天室裡找不到的，等一下自動再發，不用自己按。
+       自動試 3 次（等 30 秒、60 秒、2 分鐘）還沒送出的，才算「未發送成功」。按「停止發送」就不再自動重發。 */
+    var AUTO = [30000, 60000, 120000], sbStop = sb.querySelector('.lg-sb-stop');
+    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit; ar++) {
+      var again = jobs.filter(function (j) { return j.c.resend === 'safe'; });
+      if (!again.length) break;
+      sbStop.style.display = ''; sbStop.disabled = false; sbStop.textContent = '停止（不要自動重發）';
+      var alabel = '自動重發（第 ' + (ar + 1) + ' / ' + AUTO.length + ' 次）';
+      for (var w = AUTO[ar] / 1000; w > 0 && !state.stop; w--) {
+        state.sbar(alabel, 0, again.length, '有 ' + again.length + ' 則還沒送出（可能發太快被 LINE 擋），' + w + ' 秒後自動重發，不用按任何按鈕…');
+        await sleep(1000);
+      }
+      if (state.stop) break;
+      again.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
+      gap = Math.max(gap, 3000);
+      await sendBatch(again, alabel, true);
+      sbStop.style.display = 'none';
+      state.sbar(alabel, again.length, again.length, '重發完畢，到聊天室確認送達…');
+      await verifySent(again);
+      state.autoRetried = (state.autoRetried || 0) + again.length;
+    }
+    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
     state.busy = false;
     updateTask(jobs, !!resendJobs);
@@ -2151,7 +2191,8 @@
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
-    else if (resuming && OLHX) keepPending(state.task.status);
+    /* 有保留在最上面的工作：補發完更新保留內容；全部補發成功就從最上面拿掉（不用一直留著） */
+    else if (OLHX && (resuming || state.pendingId)) keepPending(state.task.status);
 
     resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
@@ -3014,17 +3055,29 @@
 
 
   /* 發送前確認：在視窗裡輸入則數（不用瀏覽器的跳出視窗，有些瀏覽器會擋掉） */
-  function askCount(text, n) {
+  /* 確認框：第一次發送用原本的紅框（放在 ④ 下面）；重發／繼續發送用很明顯的大框（放在結果區最上面，④ 鎖住也按得到） */
+  function askCount(text, n, big) {
     return new Promise(function (resolve) {
       var old = panel.querySelector('.lg-ask'); if (old) old.parentNode.removeChild(old);
       var box = document.createElement('div');
       box.className = 'lg-box lg-ask';
-      box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
-      box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
-        '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
-        '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
-        '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
-      var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      if (!big) {
+        box.style.cssText = 'border:2px solid #c62828;background:#fff5f5;margin:8px 0';
+        box.innerHTML = '<div style="white-space:pre-wrap;font-weight:bold">' + esc(text) + '</div>' +
+          '<input type="number" class="lg-ask-n" style="width:90px;font-size:18px;padding:4px;margin-top:6px;border:2px solid #c62828;border-radius:6px"> ' +
+          '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828">確定發送</button>' +
+          '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+        var anchor = $('.lg-prog'); anchor.parentNode.insertBefore(box, anchor.nextSibling);
+      } else {
+        box.style.cssText = 'border:4px solid #c62828;background:#fff;margin:8px 0 12px;padding:12px 14px;border-radius:10px;box-shadow:0 0 0 4px rgba(198,40,40,.18),0 6px 18px rgba(0,0,0,.18)';
+        box.innerHTML = '<div style="background:#c62828;color:#fff;font-size:17px;font-weight:bold;margin:-12px -14px 10px;padding:8px 14px;border-radius:6px 6px 0 0">⚠ 請在這裡確認，才會開始重發</div>' +
+          '<div style="white-space:pre-wrap;font-weight:bold;font-size:15px;color:#222">' + esc(text) + '</div>' +
+          '<input type="number" class="lg-ask-n" placeholder="' + n + '" style="width:110px;font-size:22px;padding:6px;margin-top:8px;border:3px solid #c62828;border-radius:8px;background:#fffde7"> ' +
+          '<button class="lg-btn lg-ask-ok" style="background:#c62828;border-color:#c62828;font-size:16px;padding:8px 18px">確定重發</button>' +
+          '<button class="lg-btn lg-sec lg-ask-no">取消</button><div class="lg-red lg-ask-err"></div>';
+        var out = $('.lg-out'); out.insertBefore(box, out.firstChild);
+        if (box.animate) box.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 450, iterations: 2 });
+      }
       var inp = box.querySelector('.lg-ask-n');
       function done(v) { if (box.parentNode) box.parentNode.removeChild(box); resolve(v); }
       box.querySelector('.lg-ask-ok').onclick = function () {
@@ -3090,12 +3143,14 @@
     if (state.task.closed) return '<div class="lg-muted" style="margin-top:6px">✔ 這個任務已結束，已記到發送紀錄總表（' + esc(state.task.status) + '）。</div>';
     return need
       ? '<br><button class="lg-btn lg-sec lg-keep" style="color:#c62828;border-color:#c62828">先結束任務（保留未成功的訊息）</button>'
-      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">✔ 結束此階段任務</button>';
+      : '<br><button class="lg-btn lg-endtask" style="background:#2e7d32;border-color:#2e7d32">' +
+        (state.task.resendOk ? '✔ 補發完成，結束這個任務' : '✔ 結束此階段任務') + '</button>' +
+        (state.task.resendOk ? '<div style="font-size:13px;font-weight:normal">補發的都送出了，最上面保留的工作已經拿掉。按上面按鈕就結束這個任務。</div>' : '');
   }
   function wireTaskButtons() {
     var end = $('.lg-endtask'), keep = $('.lg-keep');
     if (end) end.onclick = function () {
-      state.task.status = '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
+      state.task.status = state.task.resendOk ? '補發完成（已結束）' : '已結束'; state.task.closed = true; OLHX.saveTask(state.task);
       if (state.pendingId) { OLHX.removePending(state.pendingId); state.pendingId = null; }
       renderSendResult();
     };
@@ -3163,7 +3218,7 @@
         '發到一半被擋的話，剩下的會自動保留，之後可以接著發。\n\n';
     }
     var ans = await askCount(hourWarn + '帳號：' + $('.lg-bot').textContent + '\n即將' + (resuming ? '繼續發送' : resendJobs ? '重發' : '發送') + ' ' + jobs.length + ' 則訊息，給 ' + nStudents + ' 位學生的家長。\n' +
-      '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length);
+      '補考／輔導：' + (state.rtq === 'yes' ? '要（' + nRt + ' 位）' : '不要') + '\n送出後無法收回。\n\n請在下面輸入數字 ' + jobs.length + ' 確認：', jobs.length, !!resendJobs);
     if (!ans) return;
     if (OLHX && (!resendJobs || !state.task || state.task.closed)) {
       if (!resendJobs) { state.task = OLHX.newTask('成績', $('.lg-task').value.trim() || '（未命名）', jobs.length); state.pendingId = null; }
@@ -3195,13 +3250,15 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000];
+    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
-    for (var i = 0; i < jobs.length; i++) {
-      var job = jobs[i], it = job.it, c = job.c;
+    /* 發一批（第一次發、自動重發都用這一段） */
+    async function sendBatch(list, label, again) {
+    for (var i = 0; i < list.length; i++) {
+      var job = list[i], it = job.it, c = job.c;
       if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
-      state.sbar(label, i, jobs.length, '正在發：' + it.student + ' → ' + c.nick);
+      state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick);
       try {
         if (!byStudent[it.student]) {
           byStudent[it.student] = {};
@@ -3215,7 +3272,7 @@
         /* LINE 說太快（429＝確定沒送出）：等 15、30、60 秒再試，之後放慢成每 3 秒一則 */
         while (st === 429 && tries < WAITS.length && !state.stop) {
           gap = 3000;
-          state.sbar(label, i, jobs.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
+          state.sbar(label, i, list.length, 'LINE 說發太快了，等 ' + (WAITS[tries] / 1000) + ' 秒再試一次…');
           await sleep(WAITS[tries]); tries++;
           c.sendId = newSendId(); c.sentAt = Date.now();
           st = await sendText(c.contactId, it.text, c.sendId);
@@ -3228,10 +3285,34 @@
       }
       await sleep(gap);
     }
+    }
+    await sendBatch(jobs, label, false);
     state.sbar(label, jobs.length, jobs.length, state.stop ? '已停止' : '發送完畢，接著到聊天室確認送達…');
     sb.querySelector('.lg-sb-stop').style.display = 'none';
     stopBtn.style.display = 'none';
     await verifySent(jobs);
+    /* 自動重發：發太快被擋、或聊天室裡找不到的，等一下自動再發，不用自己按。
+       自動試 3 次（等 30 秒、60 秒、2 分鐘）還沒送出的，才算「未發送成功」。按「停止發送」就不再自動重發。 */
+    var AUTO = [30000, 60000, 120000], sbStop = sb.querySelector('.lg-sb-stop');
+    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit; ar++) {
+      var again = jobs.filter(function (j) { return j.c.resend === 'safe'; });
+      if (!again.length) break;
+      sbStop.style.display = ''; sbStop.disabled = false; sbStop.textContent = '停止（不要自動重發）';
+      var alabel = '自動重發（第 ' + (ar + 1) + ' / ' + AUTO.length + ' 次）';
+      for (var w = AUTO[ar] / 1000; w > 0 && !state.stop; w--) {
+        state.sbar(alabel, 0, again.length, '有 ' + again.length + ' 則還沒送出（可能發太快被 LINE 擋），' + w + ' 秒後自動重發，不用按任何按鈕…');
+        await sleep(1000);
+      }
+      if (state.stop) break;
+      again.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; j.c.sendId = null; });
+      gap = Math.max(gap, 3000);
+      await sendBatch(again, alabel, true);
+      sbStop.style.display = 'none';
+      state.sbar(alabel, again.length, again.length, '重發完畢，到聊天室確認送達…');
+      await verifySent(again);
+      state.autoRetried = (state.autoRetried || 0) + again.length;
+    }
+    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
     state.busy = false;
     updateTask(jobs, !!resendJobs);
@@ -3242,7 +3323,8 @@
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
-    else if (resuming && OLHX) keepPending(state.task.status);
+    /* 有保留在最上面的工作：補發完更新保留內容；全部補發成功就從最上面拿掉（不用一直留著） */
+    else if (OLHX && (resuming || state.pendingId)) keepPending(state.task.status);
 
     resetForm();   /* 發完就把表單清回原始狀態，避免下一批還用到這一批的班別／範本（結果表和重發按鈕保留） */
   }
