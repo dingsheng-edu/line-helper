@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.44', VERSION_DATE = '2026/10/22';
+  var VERSION = '1.45', VERSION_DATE = '2026/10/23';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -730,7 +730,10 @@
     '<textarea class="lt-paste" placeholder="胡祐綸&#10;林文琪&#10;…"></textarea>' +
     '<div class="lt-names lt-muted"></div></div>' +
     '<div class="lt-step"><h4>② 要上的標籤</h4><input type="text" class="lt-filter" placeholder="輸入關鍵字篩選標籤">' +
-    '<select class="lt-tag" size="6" style="margin-top:4px"></select></div>' +
+    '<select class="lt-tag" size="6" style="margin-top:4px"></select>' +
+    '<div style="margin-top:8px">或要上的<b>新標籤</b>（後台還沒有的，填這裡會自動建立）：</div>' +
+    '<input type="text" class="lt-newtag" placeholder="例如：115高一下招生" style="margin-top:2px">' +
+    '<div class="lt-tagnote lt-muted"></div></div>' +
     '<div class="lt-step"><h4>③ 執行</h4>' +
     '<button class="lt-btn lt-preview">搜尋預覽</button>' +
     '<button class="lt-btn lt-apply" disabled>開始上標籤</button>' +
@@ -771,16 +774,30 @@
     if (keep) sel.value = keep;
   }
   $('.lt-filter').oninput = fillTags;
-  $('.lt-tag').onchange = function () { state.rows = null; $('.lt-apply').disabled = true; };
+  $('.lt-tag').onchange = function () { if (this.value) { $('.lt-newtag').value = ''; $('.lt-tagnote').innerHTML = ''; } state.rows = null; $('.lt-apply').disabled = true; };
   getTags().then(function (t) { state.tags = t; fillTags(); }).catch(function (e) { alert('讀取標籤失敗：' + e.message); });
   api('/api/v1/bots/' + botId + '?noFilter=true').then(function (b) { state.botName = b.name || botId; $('.lt-bot').textContent = state.botName; })
     .catch(function () { state.botName = botId; $('.lt-bot').textContent = botId; });
 
-  function tagName(id) { var t = state.tags.filter(function (x) { return x.tagId === id; })[0]; return t ? t.name : id; }
+  function tagName(id) { if (id === NEW_TAG) return state.newName || ''; var t = state.tags.filter(function (x) { return x.tagId === id; })[0]; return t ? t.name : id; }
+  /* 要上的標籤：有填「新標籤」就用新標籤（後台已經有同名的就直接用那個），沒填就用上面選的 */
+  var NEW_TAG = '__new__';
+  function chosenTag() {
+    var nm = $('.lt-newtag').value.trim();
+    if (nm) { var ex = state.tags.filter(function (x) { return x.name === nm; })[0]; state.newName = nm; return ex ? ex.tagId : NEW_TAG; }
+    return $('.lt-tag').value;
+  }
+  $('.lt-newtag').oninput = function () {
+    var nm = this.value.trim(), ex = state.tags.filter(function (x) { return x.name === nm; })[0];
+    if (nm) $('.lt-tag').selectedIndex = -1;
+    $('.lt-tagnote').innerHTML = !nm ? '' : ex ? '<span class="lt-warn">後台已經有「' + esc(nm) + '」（目前 ' + ex.count + ' 個），會直接加在這個標籤上。</span>'
+      : '這是新標籤，按「開始上標籤」時會自動建立。';
+    state.rows = null; $('.lt-apply').disabled = true;
+  };
   function ready() {
     if (state.busy) return false;
     if (!state.names.length) { alert('請先放名單。'); return false; }
-    if (!$('.lt-tag').value) { alert('請先選要上的標籤。'); return false; }
+    if (!chosenTag()) { alert('請先選要上的標籤，或填一個新標籤。'); return false; }
     return true;
   }
   /* 進度條：有總數就顯示百分比；沒有總數（例如讀取全部聯絡人）就顯示來回跑的動畫 */
@@ -804,7 +821,7 @@
   /* 搜尋預覽 */
   $('.lt-preview').onclick = async function () {
     if (!ready()) return;
-    var tagId = $('.lt-tag').value;
+    var tagId = chosenTag();
     busy(true); $('.lt-out').innerHTML = '';
     try {
       state.rows = sortRows(await preview(state.names, tagId, prog));
@@ -877,6 +894,11 @@
     if (!confirm('帳號：' + (state.botName || '') + '\n確定要幫 ' + todo + ' 個 LINE 加上標籤「' + tagName(state.tagId) + '」嗎？\n（原本的標籤會保留）')) return;
     busy(true);
     try {
+      if (state.tagId === NEW_TAG) {   /* 新標籤：先建立（同名已存在就用那個） */
+        $('.lt-prog').textContent = '建立新標籤「' + state.newName + '」…';
+        state.tagId = await ensureTag(state.newName);
+        state.tags = await getTags(); fillTags();
+      }
       await apply(state.rows, state.tagId, prog);
       logTagTask(tagName(state.tagId), (function () { var a = []; state.rows.forEach(function (r) { r.contacts.forEach(function (c) { if (c.checked && c.result) a.push(c.result); }); }); return a; })());
       $('.lt-prog').textContent = '上標籤完成，正在做漏上檢查…';
@@ -890,7 +912,9 @@
   /* 只做漏上檢查 */
   $('.lt-check').onclick = async function () {
     if (!ready()) return;
-    var tagId = $('.lt-tag').value; state.tagId = tagId;
+    var tagId = chosenTag();
+    if (tagId === NEW_TAG) { alert('「' + state.newName + '」還是新標籤，後台還沒有人有，不用做漏上檢查。'); return; }
+    state.tagId = tagId;
     busy(true); $('.lt-out').innerHTML = '';
     try { renderResult(null, await check(state.names, tagId, prog)); $('.lt-prog').textContent = '檢查完成！'; }
     catch (e) { alert('檢查失敗：' + e.message); }
@@ -956,7 +980,7 @@
     if (state.busy) return;
     state.names = []; state.rows = null; state.tagId = null;
     $('.lt-paste').value = ''; $('.lt-file').value = ''; $('.lt-names').innerHTML = '';
-    $('.lt-filter').value = ''; fillTags(); $('.lt-tag').selectedIndex = -1;
+    $('.lt-filter').value = ''; fillTags(); $('.lt-tag').selectedIndex = -1; $('.lt-newtag').value = ''; $('.lt-tagnote').innerHTML = ''; state.newName = '';
     $('.lt-out').innerHTML = ''; $('.lt-apply').disabled = true; hideBar($('.lt-bar1'));
     $('.lt-prog').textContent = '✔ 已結束這一批：名單、標籤、結果都清空了，可以放下一批名單。';
     getTags().then(function (t) { state.tags = t; fillTags(); $('.lt-tag').selectedIndex = -1; });
