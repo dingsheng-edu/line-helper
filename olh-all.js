@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.45', VERSION_DATE = '2026/10/23';
+  var VERSION = '1.46', VERSION_DATE = '2026/10/23';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -707,6 +707,7 @@
     '<div class="lt-t2" style="display:none">' +
     '<div class="lt-step"><h4>① LINE 名稱以 <input type="text" class="lt-prefix" placeholder="115"> 為開頭</h4>' +
     '<button class="lt-btn p-load">找出這些人</button>' +
+    '<button class="lt-btn lt-sec p-loadall">或：找出所有 LINE 好友</button>' +
     '<div class="lt-muted">會讀取全部聯絡人（幾千人約需 30 秒），只讀不改。</div>' +
     '<div class="lt-prog p-prog1"></div><div class="lt-bar p-bar1"><i></i><span></span></div>' +
     '<div class="p-sum"></div></div>' +
@@ -1095,9 +1096,10 @@
   }
   function resetPreview() { st2.targets = null; q2('.p-apply').disabled = true; q2('.p-out').innerHTML = ''; }
 
-  q2('.p-load').onclick = async function () {
-    var prefix = q2('.lt-prefix').value.trim();
-    if (!prefix) { alert('請先輸入名稱開頭，例如 115。'); return; }
+  /* all＝true：不看名稱開頭，所有 LINE 好友都算（排除垃圾訊息、已封鎖／不是好友的） */
+  async function loadPeople(all) {
+    var prefix = all ? '' : q2('.lt-prefix').value.trim();
+    if (!all && !prefix) { alert('請先輸入名稱開頭，例如 115；或按「找出所有 LINE 好友」。'); return; }
     busy2(true); resetPreview(); st2.exclude = {}; st2.cPick = {}; st2.uncheck = {};
     /* 進度條：總人數用這台電腦上次讀到的人數估計（第一次不知道總數，就顯示跑動的動畫＋已讀人數） */
     var TOTAL_KEY = 'lt-contacts-total-' + botId, total = 0;
@@ -1111,20 +1113,35 @@
       });
       try { localStorage.setItem(TOTAL_KEY, String(st2.all.length)); } catch (e) { }
       setBar(bar1, 1, 1); q2('.p-prog1').textContent = '讀取完成：共 ' + st2.all.length + ' 人。';
-      st2.prefix = prefix;
+      st2.prefix = all ? '（所有好友）' : prefix;
+      if (all) {
+        var friends = [], notFriend = 0, spam = 0;
+        st2.all.forEach(function (c) {
+          if (c.spam) { spam++; return; }
+          if (c.friend === false) { notFriend++; return; }
+          friends.push({ contactId: c.contactId, nick: displayName(c).trim(), tagIds: c.tagIds || [], group: 'A' });
+        });
+        st2.groups = { A: friends, B: [], C: [] };
+        q2('.p-sum').innerHTML = '<div class="lt-box">共讀取 ' + st2.all.length + ' 個聯絡人：<br>' +
+          '<b>LINE 好友：' + friends.length + '</b> 個（全部算進來）<br>' +
+          '<span class="lt-muted">不算：已封鎖／不是好友 ' + notFriend + ' 個、垃圾訊息 ' + spam + ' 個</span></div>';
+      } else {
       st2.groups = classifyByPrefix(st2.all, prefix);
       var g = st2.groups;
       q2('.p-sum').innerHTML = '<div class="lt-box">共讀取 ' + st2.all.length + ' 個聯絡人，跟「' + esc(prefix) + '」有關的：<br>' +
         'A. 名稱開頭是 ' + esc(prefix) + '：<b>' + g.A.length + '</b> 個<br>' +
         'B. ' + esc(prefix) + ' 在名稱中間（兄弟姊妹共用）：<b>' + g.B.length + '</b> 個（會算進來）<br>' +
         (g.C.length || /^1\d\d$/.test(prefix) ? 'C. 只寫兩碼「' + esc(prefix.slice(1)) + '」：<b>' + g.C.length + '</b> 個（預覽時自己勾）' : '') + '</div>';
+      }
       renderExclude();
       ['.p-s2', '.p-s3', '.p-s4'].forEach(function (s) { q2(s).style.display = ''; });
       prog2('讀取完成。請勾選要扣掉的標籤、輸入新標籤，再按「預覽名單」。');
     } catch (e) { alert('讀取失敗：' + e.message); prog2(''); q2('.p-prog1').textContent = ''; }
     hideBar(bar1);
     busy2(false);
-  };
+  }
+  q2('.p-load').onclick = function () { loadPeople(false); };
+  q2('.p-loadall').onclick = function () { loadPeople(true); };
 
   function renderExclude() {
     var g = st2.groups, cnt = {};
@@ -1153,7 +1170,7 @@
   function exNames(it) { return it.tagIds.filter(function (t) { return st2.exclude[t]; }).map(tagName); }
 
   q2('.p-preview').onclick = function () {
-    if (!st2.groups) { alert('請先按「找出這些人」。'); return; }
+    if (!st2.groups) { alert('請先按「找出這些人」或「找出所有 LINE 好友」。'); return; }
     var newName = q2('.p-newtag').value.trim();
     if (!newName) { alert('請輸入要上的新標籤名稱。'); return; }
     var existing = state.tags.filter(function (x) { return x.name === newName; })[0];
@@ -1274,7 +1291,7 @@
       '預計 <b>' + targets.length + '</b> 個，確認有上到 <b>' + ok.length + '</b> 個。後台這個標籤目前共 <b>' +
       fresh.filter(function (c) { return (c.tagIds || []).indexOf(tagId) >= 0; }).length + '</b> 個。</div>';
     h += '<h4 style="margin:12px 0 4px">上標籤結果（' + ok.length + '）</h4><div class="lt-scroll"><table><tr><th style="width:60px">類型</th><th>LINE 名稱</th></tr>' +
-      ok.map(function (t) { return '<tr><td>' + ({ A: '開頭', B: '中間', C: '兩碼' }[t.group] || '') + '</td><td>' + esc(t.nick) + '</td></tr>'; }).join('') + '</table></div>';
+      ok.map(function (t) { return '<tr><td>' + ({ A: (st2.prefix === '（所有好友）' ? '好友' : '開頭'), B: '中間', C: '兩碼' }[t.group] || '') + '</td><td>' + esc(t.nick) + '</td></tr>'; }).join('') + '</table></div>';
     h += '<h4 style="margin:14px 0 4px">漏上檢查</h4>';
     if (!missing.length && !failed.length && !wrong.length && !extra.length) h += '<div class="lt-box lt-green">✔ 該上的都上了，扣掉的人也都沒有被上到。</div>';
     if (missing.length) h += '<div class="lt-box"><span class="lt-red">少上的（' + missing.length + '）</span>：<div class="lt-scroll">' +
@@ -1290,7 +1307,7 @@
     q2('.p-endtask').onclick = endTask2;
     q2('.p-copy').onclick = function () {
       var lines = ['帳號\t' + (state.botName || ''), '標籤\t' + st2.newName, '', '類型\tLINE 名稱\t結果'];
-      targets.forEach(function (t) { lines.push(({ A: '開頭', B: '中間', C: '兩碼' }[t.group] || '') + '\t' + t.nick + '\t' + (byId[t.contactId] && (byId[t.contactId].tagIds || []).indexOf(tagId) >= 0 ? '有上到' : '沒上到 ' + (t.result || ''))); });
+      targets.forEach(function (t) { lines.push(({ A: (st2.prefix === '（所有好友）' ? '好友' : '開頭'), B: '中間', C: '兩碼' }[t.group] || '') + '\t' + t.nick + '\t' + (byId[t.contactId] && (byId[t.contactId].tagIds || []).indexOf(tagId) >= 0 ? '有上到' : '沒上到 ' + (t.result || ''))); });
       if (extra.length) { lines.push('', '多出來的'); extra.forEach(function (n) { lines.push('\t' + n); }); }
       if (wrong.length) { lines.push('', '扣掉的人卻有新標籤'); wrong.forEach(function (n) { lines.push('\t' + n); }); }
       var text = lines.join('\n');
