@@ -3728,34 +3728,36 @@
     bfRunning = true;
     var total = 0, dupTotal = 0;
     try {
-      for (var w = 0; w < list.length; w++) {
-        var o = list[w], from = parseLocal(o.start) - 10 * 60000, to = parseLocal(o.end) + 10 * 60000;
-        var label = '補習班電腦斷線 ' + md(o.start.slice(0, 10)) + ' ' + o.start.slice(11) + ' ～ ' + md(o.end.slice(0, 10)) + ' ' + o.end.slice(11);
-        var msgs = [], next = null, guard = 0, stop = false, nChats = 0;
-        do {
-          var j = await lineGet('/api/v2/bots/' + GAOQUN + '/chats?folderType=ALL&limit=25' + (next ? '&next=' + encodeURIComponent(next) : ''));
-          for (var i = 0; i < (j.list || []).length; i++) {
-            var c = j.list[i];
-            /* 清單的順序不一定照時間（釘選、群發會打亂），所以整份清單都看過，只讀「家長在斷線開始後有傳過訊息」的聊天室 */
-            if (c.chatType && c.chatType !== 'USER') continue;
-            if (!receivedAt(c) || receivedAt(c) < from) continue;   /* 家長在斷線之後都沒傳過訊息 */
-            nChats++;
-            bfBanner('🔄 <b>正在補抓斷線期間的請假</b>（' + esc(label) + '）<br>讀 LINE 後台紀錄中… 第 ' + nChats + ' 個聊天室，找到 ' + msgs.length + ' 則家長訊息。' +
-              '<div class="ll-muted">只讀紀錄，不會回覆、也不會打開聊天室。請先不要關掉小幫手。</div>');
-            var p = c.profile || {};
-            try {
-              (await chatTexts(c.chatId, from, to)).forEach(function (m) { msgs.push({ cid: c.chatId, name: p.name || '', nick: p.nickname || '', text: m.text, ts: m.ts }); });
-            } catch (e) { }
-            await new Promise(function (r) { setTimeout(r, 150); });
-          }
-          next = j.next; guard++;
-        } while (next && !stop && guard < 200);
-        for (var k = 0; k < msgs.length; k += 100) {
-          var r = await srv('/leaves/backfill', { msgs: msgs.slice(k, k + 100) });
-          total += r.queued || 0; dupTotal += r.duplicate || 0;
+      /* 每個聊天室只讀一次，同時挑出所有斷線時段（前後各多 10 分鐘）裡家長傳的文字 */
+      var wins = list.map(function (o) { return [parseLocal(o.start) - 10 * 60000, parseLocal(o.end) + 10 * 60000]; });
+      var from = Math.min.apply(null, wins.map(function (x) { return x[0]; }));
+      var to = Math.max.apply(null, wins.map(function (x) { return x[1]; }));
+      function inWin(ts) { return wins.some(function (x) { return ts >= x[0] && ts <= x[1]; }); }
+      var label = list.map(function (o) { return md(o.start.slice(0, 10)) + ' ' + o.start.slice(11) + '～' + md(o.end.slice(0, 10)) + ' ' + o.end.slice(11); }).join('、');
+      var msgs = [], next = null, guard = 0, nChats = 0;
+      do {
+        var j = await lineGet('/api/v2/bots/' + GAOQUN + '/chats?folderType=ALL&limit=25' + (next ? '&next=' + encodeURIComponent(next) : ''));
+        for (var i = 0; i < (j.list || []).length; i++) {
+          var c = j.list[i];
+          /* 清單的順序不一定照時間（釘選、群發會打亂），所以整份清單都看過，只讀「家長在斷線開始後有傳過訊息」的聊天室 */
+          if (c.chatType && c.chatType !== 'USER') continue;
+          if (!receivedAt(c) || receivedAt(c) < from) continue;
+          nChats++;
+          bfBanner('🔄 <b>正在補抓斷線期間的請假</b>（補習班電腦斷線 ' + esc(label) + '）<br>讀 LINE 後台紀錄中… 第 ' + nChats + ' 個聊天室，找到 ' + msgs.length + ' 則家長訊息。' +
+            '<div class="ll-muted">只讀紀錄，不會回覆、也不會打開聊天室。請先不要關掉小幫手（大約要幾分鐘）。</div>');
+          var p = c.profile || {};
+          try {
+            (await chatTexts(c.chatId, from, to)).forEach(function (m) { if (inWin(m.ts)) msgs.push({ cid: c.chatId, name: p.name || '', nick: p.nickname || '', text: m.text, ts: m.ts }); });
+          } catch (e) { }
+          await new Promise(function (r) { setTimeout(r, 100); });
         }
-        await srv('/leaves/outages/' + o.id + '/done', { found: msgs.length });
+        next = j.next; guard++;
+      } while (next && guard < 300);
+      for (var k = 0; k < msgs.length; k += 100) {
+        var r = await srv('/leaves/backfill', { msgs: msgs.slice(k, k + 100) });
+        total += r.queued || 0; dupTotal += r.duplicate || 0;
       }
+      for (var w = 0; w < list.length; w++) await srv('/leaves/outages/' + list[w].id + '/done', { found: msgs.length });
       bfBanner('✔ <b>斷線補抓完成</b>：找到 ' + total + ' 則像請假的訊息，補習班電腦正在判斷，約 1～2 分鐘後會自動更新這張表' +
         (dupTotal ? '（另有 ' + dupTotal + ' 則機器人當時已經記過）' : '') + '。補回來的那幾筆，備註會寫「補抓」。', '#2e7d32');
       if (total) { setTimeout(reload, 60000); setTimeout(reload, 150000); }
