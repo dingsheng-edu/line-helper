@@ -3693,10 +3693,10 @@
      只讀紀錄，不會回覆、也不會打開聊天室畫面。只在高群帳號做。 */
   var bfRunning = false;
   function parseLocal(s) { var m = String(s || '').match(/(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime() : 0; }
-  function chatTime(c) {
-    var v = c.lastEventAt || c.lastMessageAt || c.updatedAt || c.latestEventAt || (c.lastMessage && (c.lastMessage.timestamp || c.lastMessage.createdAt));
-    return typeof v === 'number' ? v : (v ? Date.parse(v) || 0 : 0);
-  }
+  /* LINE 後台聊天室清單：釘選的排最前面，其他照 lastTalkedAt（最後有人講話，含櫃台群發）排。
+     lastReceivedAt＝家長最後一次傳訊息的時間，比斷線開始還早的就不用讀。 */
+  function talkedAt(c) { return c.lastTalkedAt || c.updatedAt || 0; }
+  function receivedAt(c) { return c.lastReceivedAt || 0; }
   async function lineGet(path) {
     var r = await fetch(path, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
     if (!r.ok) throw new Error('LINE 後台回應 ' + r.status);
@@ -3705,13 +3705,13 @@
   async function chatTexts(chatId, from, to) {
     var out = [], next = null, guard = 0, oldest = Infinity;
     do {
-      var j = await lineGet('/api/v3/bots/' + GAOQUN + '/chats/' + chatId + '/messages?limit=50' + (next ? '&next=' + encodeURIComponent(next) : ''));
+      var j = await lineGet('/api/v3/bots/' + GAOQUN + '/chats/' + chatId + '/messages?limit=50' + (next ? '&backward=' + encodeURIComponent(next) : ''));
       (j.list || []).forEach(function (x) {
         if (x.timestamp < oldest) oldest = x.timestamp;
         if (x.type === 'message' && x.message && x.message.type === 'text' && x.timestamp >= from && x.timestamp <= to) out.push({ text: x.message.text, ts: x.timestamp });
       });
-      next = j.next; guard++;
-    } while (next && oldest > from && guard < 6);
+      next = j.backward; guard++;   /* 往前翻一頁用 backward */
+    } while (next && oldest > from && guard < 8);
     return out;
   }
   function bfBanner(html, color) {
@@ -3735,8 +3735,10 @@
         do {
           var j = await lineGet('/api/v2/bots/' + GAOQUN + '/chats?folderType=ALL&limit=25' + (next ? '&next=' + encodeURIComponent(next) : ''));
           for (var i = 0; i < (j.list || []).length; i++) {
-            var c = j.list[i], t = chatTime(c);
-            if (t && t < from) { stop = true; continue; }       /* 聊天室照最近活動排，比斷線還早的後面都不用看 */
+            var c = j.list[i];
+            if (!c.pinnedAt && talkedAt(c) && talkedAt(c) < from) { stop = true; continue; }   /* 後面的都比斷線還早，不用看了 */
+            if (c.chatType && c.chatType !== 'USER') continue;
+            if (!receivedAt(c) || receivedAt(c) < from) continue;   /* 家長在斷線之後都沒傳過訊息 */
             nChats++;
             bfBanner('🔄 <b>正在補抓斷線期間的請假</b>（' + esc(label) + '）<br>讀 LINE 後台紀錄中… 第 ' + nChats + ' 個聊天室，找到 ' + msgs.length + ' 則家長訊息。' +
               '<div class="ll-muted">只讀紀錄，不會回覆、也不會打開聊天室。請先不要關掉小幫手。</div>');
