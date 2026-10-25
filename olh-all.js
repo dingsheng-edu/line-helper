@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.46', VERSION_DATE = '2026/10/23';
+  var VERSION = '1.47', VERSION_DATE = '2026/10/25';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -3633,7 +3633,7 @@
       state.rows = j.leaves; state.from = f; state.to = to;
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
       draw();
-      guessNames();
+      guessNames().then(autoBackfill);
     } catch (e) { $('.ll-st').textContent = ''; $('.ll-out').innerHTML = '<div class="ll-err">' + esc(e.message) + '</div>'; }
   }
 
@@ -3685,6 +3685,86 @@
       } catch (e) { }
     }
     if (changed) draw();
+  }
+
+  /* ========== 斷線補抓：補習班電腦連不上外面時漏掉的請假，打開請假總表時自動到 LINE 後台補回來 ==========
+     補習班電腦每 30 分鐘檢查一次，連不進來的時段記下來（/leaves/outages）。這裡讀那段時間有家長傳訊息的聊天室，
+     把家長傳的文字送回補習班電腦（/leaves/backfill），像請假的才判斷；機器人當時有收到、或櫃台已手動加的不會重複記。
+     只讀紀錄，不會回覆、也不會打開聊天室畫面。只在高群帳號做。 */
+  var bfRunning = false;
+  function parseLocal(s) { var m = String(s || '').match(/(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime() : 0; }
+  /* LINE 後台聊天室清單：釘選的排最前面，其他照 lastTalkedAt（最後有人講話，含櫃台群發）排。
+     lastReceivedAt＝家長最後一次傳訊息的時間，比斷線開始還早的就不用讀。 */
+  function talkedAt(c) { return c.lastTalkedAt || c.updatedAt || 0; }
+  function receivedAt(c) { return c.lastReceivedAt || 0; }
+  async function lineGet(path) {
+    var r = await fetch(path, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+    if (!r.ok) throw new Error('LINE 後台回應 ' + r.status);
+    return r.json();
+  }
+  async function chatTexts(chatId, from, to) {
+    var out = [], next = null, guard = 0, oldest = Infinity;
+    do {
+      var j = await lineGet('/api/v3/bots/' + GAOQUN + '/chats/' + chatId + '/messages?limit=50' + (next ? '&backward=' + encodeURIComponent(next) : ''));
+      (j.list || []).forEach(function (x) {
+        if (x.timestamp < oldest) oldest = x.timestamp;
+        if (x.type === 'message' && x.message && x.message.type === 'text' && x.timestamp >= from && x.timestamp <= to) out.push({ text: x.message.text, ts: x.timestamp });
+      });
+      next = j.backward; guard++;   /* 往前翻一頁用 backward */
+    } while (next && oldest > from && guard < 8);
+    return out;
+  }
+  function bfBanner(html, color) {
+    var b = $('.ll-bf');
+    if (!b) { b = document.createElement('div'); b.className = 'll-bf ll-box'; $('.ll-out').parentNode.insertBefore(b, $('.ll-out')); }
+    b.style.cssText = 'border:2px solid ' + (color || '#1565c0') + ';background:#f3f8fe';
+    b.innerHTML = html;
+  }
+  async function autoBackfill() {
+    if (bfRunning || (location.pathname.split('/')[1] || '') !== GAOQUN) return;
+    var list;
+    try { list = (await srv('/leaves/outages')).outages || []; } catch (e) { return; }
+    if (!list.length) return;
+    bfRunning = true;
+    var total = 0, dupTotal = 0;
+    try {
+      /* 每個聊天室只讀一次，同時挑出所有斷線時段（前後各多 10 分鐘）裡家長傳的文字 */
+      var wins = list.map(function (o) { return [parseLocal(o.start) - 10 * 60000, parseLocal(o.end) + 10 * 60000]; });
+      var from = Math.min.apply(null, wins.map(function (x) { return x[0]; }));
+      var to = Math.max.apply(null, wins.map(function (x) { return x[1]; }));
+      function inWin(ts) { return wins.some(function (x) { return ts >= x[0] && ts <= x[1]; }); }
+      var label = list.map(function (o) { return md(o.start.slice(0, 10)) + ' ' + o.start.slice(11) + '～' + md(o.end.slice(0, 10)) + ' ' + o.end.slice(11); }).join('、');
+      var msgs = [], next = null, guard = 0, nChats = 0;
+      do {
+        var j = await lineGet('/api/v2/bots/' + GAOQUN + '/chats?folderType=ALL&limit=25' + (next ? '&next=' + encodeURIComponent(next) : ''));
+        for (var i = 0; i < (j.list || []).length; i++) {
+          var c = j.list[i];
+          /* 清單的順序不一定照時間（釘選、群發會打亂），所以整份清單都看過，只讀「家長在斷線開始後有傳過訊息」的聊天室 */
+          if (c.chatType && c.chatType !== 'USER') continue;
+          if (!receivedAt(c) || receivedAt(c) < from) continue;
+          nChats++;
+          bfBanner('🔄 <b>正在補抓斷線期間的請假</b>（補習班電腦斷線 ' + esc(label) + '）<br>讀 LINE 後台紀錄中… 第 ' + nChats + ' 個聊天室，找到 ' + msgs.length + ' 則家長訊息。' +
+            '<div class="ll-muted">只讀紀錄，不會回覆、也不會打開聊天室。請先不要關掉小幫手（大約要幾分鐘）。</div>');
+          var p = c.profile || {};
+          try {
+            (await chatTexts(c.chatId, from, to)).forEach(function (m) { if (inWin(m.ts)) msgs.push({ cid: c.chatId, name: p.name || '', nick: p.nickname || '', text: m.text, ts: m.ts }); });
+          } catch (e) { }
+          await new Promise(function (r) { setTimeout(r, 100); });
+        }
+        next = j.next; guard++;
+      } while (next && guard < 300);
+      for (var k = 0; k < msgs.length; k += 100) {
+        var r = await srv('/leaves/backfill', { msgs: msgs.slice(k, k + 100) });
+        total += r.queued || 0; dupTotal += r.duplicate || 0;
+      }
+      for (var w = 0; w < list.length; w++) await srv('/leaves/outages/' + list[w].id + '/done', { found: msgs.length });
+      bfBanner('✔ <b>斷線補抓完成</b>：找到 ' + total + ' 則像請假的訊息，補習班電腦正在判斷，約 1～2 分鐘後會自動更新這張表' +
+        (dupTotal ? '（另有 ' + dupTotal + ' 則機器人當時已經記過）' : '') + '。補回來的那幾筆，備註會寫「補抓」。', '#2e7d32');
+      if (total) { setTimeout(reload, 60000); setTimeout(reload, 150000); }
+    } catch (e) {
+      bfBanner('⚠ 斷線補抓沒有完成：' + esc(e.message) + '。下次打開請假總表會再試一次。', '#c62828');
+    }
+    bfRunning = false;
   }
 
   function draw() {
