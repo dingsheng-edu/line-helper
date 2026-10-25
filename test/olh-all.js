@@ -3736,7 +3736,7 @@
           var j = await lineGet('/api/v2/bots/' + GAOQUN + '/chats?folderType=ALL&limit=25' + (next ? '&next=' + encodeURIComponent(next) : ''));
           for (var i = 0; i < (j.list || []).length; i++) {
             var c = j.list[i];
-            if (!c.pinnedAt && talkedAt(c) && talkedAt(c) < from) { stop = true; continue; }   /* 後面的都比斷線還早，不用看了 */
+            /* 清單的順序不一定照時間（釘選、群發會打亂），所以整份清單都看過，只讀「家長在斷線開始後有傳過訊息」的聊天室 */
             if (c.chatType && c.chatType !== 'USER') continue;
             if (!receivedAt(c) || receivedAt(c) < from) continue;   /* 家長在斷線之後都沒傳過訊息 */
             nChats++;
