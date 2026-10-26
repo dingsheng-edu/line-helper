@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.49', VERSION_DATE = '2026/10/26';
+  var VERSION = '1.50', VERSION_DATE = '2026/10/26';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -3581,7 +3581,8 @@
     '<div class="ll-muted"><button class="ll-btn sec ll-rekey" style="float:right;font-size:12px;padding:2px 8px">🔑 換密碼</button>家長在 <b>高群</b> LINE 傳請假訊息，機器人會自動記在這裡（約 10 秒內）。打勾＝櫃台已確認／已處理。</div>' +
     '<div style="margin-top:6px"><button class="ll-btn sec ll-r" data-r="today">今天</button><button class="ll-btn sec ll-r" data-r="tomorrow">明天</button>' +
     '<button class="ll-btn sec ll-r" data-r="week">這 7 天</button><button class="ll-btn sec ll-r" data-r="past">過去 30 天</button> ' +
-    '<input type="date" class="ll-from"> ～ <input type="date" class="ll-to"> <button class="ll-btn ll-load">查詢</button></div>' +
+    '<input type="date" class="ll-from"> ～ <input type="date" class="ll-to"> <button class="ll-btn ll-load">查詢</button>' +
+    '<button class="ll-btn sec ll-refresh" title="重新用家長 LINE 名稱比對還沒有姓名的請假（會讀一次後台全部聯絡人，約 30 秒）">🔄 更新（重新比對姓名）</button></div>' +
     '<div style="margin-top:4px"><label style="cursor:pointer"><input type="checkbox" class="ll-showcx"> 顯示已取消的</label>　' +
     '<label style="cursor:pointer"><input type="checkbox" class="ll-onlyopen"> 只看還沒確認的</label>　' +
     '<button class="ll-btn sec ll-xlsx">⬇ 下載 Excel</button><button class="ll-btn sec ll-addbtn">＋ 手動新增</button></div>' +
@@ -3623,8 +3624,10 @@
   panel.querySelectorAll('.ll-r').forEach(function (b) { b.onclick = function () { setRange(this.dataset.r); }; });
   $('.ll-load').onclick = function () { panel.querySelectorAll('.ll-r').forEach(function (b) { b.classList.remove('on'); }); reload(); };
   $('.ll-showcx').onchange = $('.ll-onlyopen').onchange = function () { draw(); };
+  /* 🔄 更新：重新讀這段日期，沒姓名的再比對一次；這時才會讀全部聯絡人（平常打開不讀，比較快） */
+  $('.ll-refresh').onclick = function () { tried = {}; nickMap = null; try { sessionStorage.removeItem(NICK_KEY); } catch (e) { } reload(true); };
 
-  async function reload() {
+  async function reload(full) {
     var f = $('.ll-from').value, to = $('.ll-to').value;
     if (!f || !to) return;
     if (!load(KEY_KEY)) { $('.ll-out').innerHTML = ''; return; }
@@ -3634,7 +3637,7 @@
       state.rows = j.leaves; state.from = f; state.to = to;
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
       draw();
-      guessNames().then(autoBackfill);
+      guessNames(full === true).then(autoBackfill);
     } catch (e) { $('.ll-st').textContent = ''; $('.ll-out').innerHTML = '<div class="ll-err">' + esc(e.message) + '</div>'; }
   }
 
@@ -3668,10 +3671,10 @@
     }
     return (nickMap[nm] || []).slice(0, 5);
   }
-  async function guessNames() {
+  async function guessNames(full) {
     if ((location.pathname.split('/')[1] || '') !== GAOQUN) return;
     var todo = state.rows.filter(function (r) { return (!r.student || /可能是/.test(r.note || '')) && r.parent && !tried[r.id]; });
-    var changed = false;
+    var changed = false, needFull = 0;
     for (var i = 0; i < todo.length; i++) {
       var r = todo[i]; tried[r.id] = 1;
       try {
@@ -3679,13 +3682,16 @@
         var res = await fetch('/api/v2/bots/' + GAOQUN + '/contacts?query=' + encodeURIComponent(r.parent) + '&limit=50', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
         if (res.ok) nicks = ((await res.json()).list || []).filter(function (c) { var p = c.profile || {}; return p.name === r.parent && p.nickname; })
           .map(function (c) { return c.profile.nickname; });
-        if (!nicks.length) nicks = await nicksByName(r.parent);
+        /* 搜尋找不到時，要讀全部聯絡人才對得到：平常不讀（按「🔄 更新」才讀），已經讀過（30 分鐘內）就直接用 */
+        if (!nicks.length && (full || nickMap || sessionStorage.getItem(NICK_KEY))) nicks = await nicksByName(r.parent);
+        else if (!nicks.length) { needFull++; delete tried[r.id]; continue; }
         if (!nicks.length) continue;
         var g = await srv('/leaves/' + r.id + '/guess', { nicknames: nicks });
         if (g.student !== r.student || g.note !== r.note || g.cls !== r.cls) { r.student = g.student || ''; r.note = g.note || ''; r.cls = g.cls || ''; changed = true; }
       } catch (e) { }
     }
     if (changed) draw();
+    if (needFull) $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5) + '　有 ' + needFull + ' 筆還沒有姓名，按「🔄 更新」重新比對';
   }
 
   /* ========== 斷線補抓：補習班電腦連不上外面時漏掉的請假，打開請假總表時自動到 LINE 後台補回來 ==========
