@@ -1937,15 +1937,9 @@
     items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.pending && c.checked) pend.push(it.student + '：' + c.nick); }); });
     if (pend.length) {
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：待確認 ' + pend.length + ' 個 LINE</b>（名稱前面不一樣，可能不是同一家人，<b>已先幫你勾選</b>；不是的話在下面取消勾選）：' +
-        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + pend.map(esc).join('<br>') + '</div>' +
-        '<button class="lg-btn lg-sec lg-pend-none" style="color:#ef6c00;border-color:#ef6c00">這些都不是，全部取消勾選</button></div>' + h;
+        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + pend.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
-    if (pend.length) $('.lg-pend-none').onclick = function () {
-      state.items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.pending) c.checked = false; }); });
-      renderPreview();
-      $('.lg-prog').textContent = '已把 ' + pend.length + ' 個待確認的 LINE 取消勾選。';
-    };
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
         state.items[this.dataset.i].contacts[this.dataset.c].checked = this.checked;
@@ -3086,15 +3080,9 @@
     items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.pending && c.checked) pend.push(it.student + '：' + c.nick); }); });
     if (pend.length) {
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：待確認 ' + pend.length + ' 個 LINE</b>（名稱前面不一樣，可能不是同一家人，<b>已先幫你勾選</b>；不是的話在下面取消勾選）：' +
-        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + pend.map(esc).join('<br>') + '</div>' +
-        '<button class="lg-btn lg-sec lg-pend-none" style="color:#ef6c00;border-color:#ef6c00">這些都不是，全部取消勾選</button></div>' + h;
+        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + pend.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
-    if (pend.length) $('.lg-pend-none').onclick = function () {
-      state.items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.pending) c.checked = false; }); });
-      renderPreview();
-      $('.lg-prog').textContent = '已把 ' + pend.length + ' 個待確認的 LINE 取消勾選。';
-    };
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
         state.items[this.dataset.i].contacts[this.dataset.c].checked = this.checked;
