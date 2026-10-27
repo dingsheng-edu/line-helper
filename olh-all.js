@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.50', VERSION_DATE = '2026/10/26';
+  var VERSION = '1.51', VERSION_DATE = '2026/10/27';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1955,7 +1955,7 @@
      - 要輸入則數才會開始（防手滑）
      - 每則之前重新確認這個 LINE 還在、名稱裡還有學生姓名
      - 24 小時內發過一樣內容給同一個 LINE → 自動略過
-     - 一則一則慢慢發（間隔約 1.5 秒），隨時可以按「停止發送」
+     - 一則一則慢慢發（間隔約 3 秒，LINE 大約每分鐘只收 20 則，這樣不會被擋；2026/10/26 實測），隨時可以按「停止發送」
      - 結果不確定（例如網路斷掉）時不會自動重發，請到聊天室確認 */
   if (SEND_ENABLED) {
     $('.lg-send').onclick = function () { doSend(); };
@@ -2078,6 +2078,19 @@
       };
     };
   }
+  /* LINE 後台回 401（未授權）：多半是登入過期。剩下的自動保留，跳出說明 */
+  function showAuthBox(sent, left) {
+    var box = document.createElement('div');
+    box.className = 'lg-box'; box.style.cssText = 'border:3px solid #c62828;background:#ffebee;margin:8px 0;font-size:15px';
+    box.innerHTML = '<b style="font-size:17px;color:#b71c1c">⚠ LINE 後台登入可能過期了，請重新整理網頁、確認登入後再按重發</b><br>' +
+      '這次已發出 <b>' + sent + '</b> 則；沒發出去的 <b>' + left + '</b> 則已保留在這台電腦（LINE 回「401 未授權」，那幾則確定沒送出）。<br>' +
+      '重新整理網頁（按 F5）、確認還登入著高群後，重新打開小幫手，最上面按「<b>▶ 繼續發送</b>」就會接著發。<br>' +
+      '<button class="lg-btn lg-sec lg-auth-x">知道了</button>';
+    $('.lg-out').insertBefore(box, $('.lg-out').firstChild);
+    box.querySelector('.lg-auth-x').onclick = function () { box.parentNode.removeChild(box); };
+    box.scrollIntoView({ block: 'center' });
+  }
+
   /* 已達 LINE 短時間上限：剩下的自動保留，跳出說明 */
   function showLimitBox(sent, left) {
     var box = document.createElement('div');
@@ -2128,7 +2141,7 @@
       if (!resendJobs) { state.task = OLHX.newTask('通知', $('.lg-task').value.trim() || '（未命名）', jobs.length); state.pendingId = null; }
       else if (state.task) state.task.closed = false;
     }
-    state.limit = false;
+    state.limit = false; state.auth = false;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
@@ -2154,13 +2167,14 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
+    var done = 0, byStudent = {}, gap = 3000, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
     var cur = null;
     /* 發一批（第一次發、自動重發都用這一段） */
     async function sendBatch(list, label, again) {
     for (var i = 0; i < list.length; i++) {
       var job = list[i], it = job.it, c = job.c;
+      if (state.auth) { c.result = '未發送：LINE 後台登入可能過期（已保留）'; c.resend = 'safe'; continue; }
       if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
       state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick);
@@ -2193,6 +2207,7 @@
           }
           if (st >= 200 && st < 300) part.ok = true;
           else if (st === 429) { part.sendId = null; failKind = 'blocked'; state.limit = true; break; }
+          else if (st === 401) { part.sendId = null; failKind = 'auth'; state.auth = true; break; }   /* 登入過期：確定沒送出 */
           else { part.unsure = true; failKind = 'unsure'; break; }
           if (pi < c.parts.length - 1) await sleep(800);
         }
@@ -2200,6 +2215,7 @@
         if (!failKind) { c.result = '成功'; markSent(c.contactId, it.key); done++; if (OLHX) OLHX.noteSent(c.contactId); }
         else if (failKind === 'stop') { c.result = '已停止（還有部分沒發）'; c.resend = 'safe'; }
         else if (failKind === 'blocked') { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; }
+        else if (failKind === 'auth') { c.result = '未發送：LINE 後台登入可能過期（已保留）'; c.resend = 'safe'; }
         else { c.result = '失敗（代碼 ' + st + '），請到聊天室確認有沒有送出'; c.resend = 'unsure'; }
       } catch (e) {
         if (cur && cur.sendId) cur.unsure = true;
@@ -2217,7 +2233,7 @@
     /* 自動重發：發太快被擋、或聊天室裡找不到的，等一下自動再發，不用自己按。
        自動試 3 次（等 30 秒、60 秒、2 分鐘）還沒送出的，才算「未發送成功」。按「停止發送」就不再自動重發。 */
     var AUTO = [30000, 60000, 120000], sbStop = sb.querySelector('.lg-sb-stop');
-    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit; ar++) {
+    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit && !state.auth; ar++) {
       var again = jobs.filter(function (j) { return j.c.resend === 'safe'; });
       if (!again.length) break;
       sbStop.style.display = ''; sbStop.disabled = false; sbStop.textContent = '停止（不要自動重發）';
@@ -2235,17 +2251,19 @@
       await verifySent(again);
       state.autoRetried = (state.autoRetried || 0) + again.length;
     }
-    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
+    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit && !state.auth) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
     state.busy = false;
     updateTask(jobs, !!resendJobs);
-    var limitHit = state.limit && OLHX;
+    var limitHit = state.limit && OLHX, authHit = state.auth && OLHX && !limitHit;
+    if (authHit) { await keepPending('LINE 後台登入可能過期'); state.task.status = '保留待補發（登入過期）'; state.task.closed = true; OLHX.saveTask(state.task); }
     if (limitHit) { await keepPending('已達短時間內可發送的訊息數量上限'); state.task.status = '保留待補發（已達上限）'; state.task.closed = true; OLHX.saveTask(state.task); }
     var okN = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
     var vN = jobs.filter(function (j) { return j.c.verify === 'ok'; }).length;
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
+    else if (authHit || state.auth) showAuthBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
     /* 有保留在最上面的工作：補發完更新保留內容；全部補發成功就從最上面拿掉（不用一直留著） */
     else if (OLHX && (resuming || state.pendingId)) keepPending(state.task.status);
 
@@ -3098,7 +3116,7 @@
      - 要輸入則數才會開始（防手滑）
      - 每則之前重新確認這個 LINE 還在、名稱裡還有學生姓名
      - 24 小時內發過一樣內容給同一個 LINE → 自動略過
-     - 一則一則慢慢發（間隔約 1.5 秒），隨時可以按「停止發送」
+     - 一則一則慢慢發（間隔約 3 秒，LINE 大約每分鐘只收 20 則，這樣不會被擋；2026/10/26 實測），隨時可以按「停止發送」
      - 結果不確定（例如網路斷掉）時不會自動重發，請到聊天室確認 */
   if (SEND_ENABLED) {
     $('.lg-send').onclick = function () { doSend(); };
@@ -3221,6 +3239,19 @@
       };
     };
   }
+  /* LINE 後台回 401（未授權）：多半是登入過期。剩下的自動保留，跳出說明 */
+  function showAuthBox(sent, left) {
+    var box = document.createElement('div');
+    box.className = 'lg-box'; box.style.cssText = 'border:3px solid #c62828;background:#ffebee;margin:8px 0;font-size:15px';
+    box.innerHTML = '<b style="font-size:17px;color:#b71c1c">⚠ LINE 後台登入可能過期了，請重新整理網頁、確認登入後再按重發</b><br>' +
+      '這次已發出 <b>' + sent + '</b> 則；沒發出去的 <b>' + left + '</b> 則已保留在這台電腦（LINE 回「401 未授權」，那幾則確定沒送出）。<br>' +
+      '重新整理網頁（按 F5）、確認還登入著高群後，重新打開小幫手，最上面按「<b>▶ 繼續發送</b>」就會接著發。<br>' +
+      '<button class="lg-btn lg-sec lg-auth-x">知道了</button>';
+    $('.lg-out').insertBefore(box, $('.lg-out').firstChild);
+    box.querySelector('.lg-auth-x').onclick = function () { box.parentNode.removeChild(box); };
+    box.scrollIntoView({ block: 'center' });
+  }
+
   /* 已達 LINE 短時間上限：剩下的自動保留，跳出說明 */
   function showLimitBox(sent, left) {
     var box = document.createElement('div');
@@ -3276,7 +3307,7 @@
       if (!resendJobs) { state.task = OLHX.newTask('成績', $('.lg-task').value.trim() || '（未命名）', jobs.length); state.pendingId = null; }
       else if (state.task) state.task.closed = false;
     }
-    state.limit = false;
+    state.limit = false; state.auth = false;
 
     state.busy = true; state.stop = false;
     panel.querySelectorAll('button.lg-btn').forEach(function (b) { b.disabled = true; });
@@ -3302,12 +3333,13 @@
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
 
-    var done = 0, byStudent = {}, gap = 1500, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
+    var done = 0, byStudent = {}, gap = 3000, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
     /* 發一批（第一次發、自動重發都用這一段） */
     async function sendBatch(list, label, again) {
     for (var i = 0; i < list.length; i++) {
       var job = list[i], it = job.it, c = job.c;
+      if (state.auth) { c.result = '未發送：LINE 後台登入可能過期（已保留）'; c.resend = 'safe'; continue; }
       if (state.limit) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; continue; }
       if (state.stop) { c.result = '已停止（沒發）'; c.resend = 'safe'; continue; }
       state.sbar(label, i, list.length, '正在發：' + it.student + ' → ' + c.nick);
@@ -3331,6 +3363,7 @@
         }
         if (st >= 200 && st < 300) { c.result = '成功'; markSent(c.contactId, it.text); done++; if (OLHX) OLHX.noteSent(c.contactId); }
         else if (st === 429) { c.result = '未發送：已達短時間上限（已保留）'; c.resend = 'safe'; c.sendId = null; state.limit = true; }
+        else if (st === 401) { c.result = '未發送：LINE 後台登入可能過期（已保留）'; c.resend = 'safe'; c.sendId = null; state.auth = true; }   /* 登入過期：確定沒送出 */
         else { c.result = '失敗（代碼 ' + st + '），請到聊天室確認有沒有送出'; c.resend = 'unsure'; }
       } catch (e) {
         c.result = '失敗（連線錯誤），請到聊天室確認有沒有送出'; c.resend = 'unsure';
@@ -3346,7 +3379,7 @@
     /* 自動重發：發太快被擋、或聊天室裡找不到的，等一下自動再發，不用自己按。
        自動試 3 次（等 30 秒、60 秒、2 分鐘）還沒送出的，才算「未發送成功」。按「停止發送」就不再自動重發。 */
     var AUTO = [30000, 60000, 120000], sbStop = sb.querySelector('.lg-sb-stop');
-    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit; ar++) {
+    for (var ar = 0; ar < AUTO.length && !state.stop && !state.limit && !state.auth; ar++) {
       var again = jobs.filter(function (j) { return j.c.resend === 'safe'; });
       if (!again.length) break;
       sbStop.style.display = ''; sbStop.disabled = false; sbStop.textContent = '停止（不要自動重發）';
@@ -3364,17 +3397,19 @@
       await verifySent(again);
       state.autoRetried = (state.autoRetried || 0) + again.length;
     }
-    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
+    if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit && !state.auth) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
     state.busy = false;
     updateTask(jobs, !!resendJobs);
-    var limitHit = state.limit && OLHX;
+    var limitHit = state.limit && OLHX, authHit = state.auth && OLHX && !limitHit;
+    if (authHit) { await keepPending('LINE 後台登入可能過期'); state.task.status = '保留待補發（登入過期）'; state.task.closed = true; OLHX.saveTask(state.task); }
     if (limitHit) { await keepPending('已達短時間內可發送的訊息數量上限'); state.task.status = '保留待補發（已達上限）'; state.task.closed = true; OLHX.saveTask(state.task); }
     var okN = jobs.filter(function (j) { return j.c.result === '成功'; }).length;
     var vN = jobs.filter(function (j) { return j.c.verify === 'ok'; }).length;
     $('.lg-prog').textContent = (state.stop ? '已停止。' : (resendJobs ? '重發完成。' : '發送完成。')) + '這次成功 ' + okN + ' 則，其中 ' + vN + ' 則已在聊天室確認。';
     renderSendResult();
     if (limitHit) showLimitBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
+    else if (authHit || state.auth) showAuthBox(jobs.filter(function (j) { return j.c.result === '成功'; }).length, remainingJobs().length);
     /* 有保留在最上面的工作：補發完更新保留內容；全部補發成功就從最上面拿掉（不用一直留著） */
     else if (OLHX && (resuming || state.pendingId)) keepPending(state.task.status);
 
