@@ -42,9 +42,15 @@
        對法：任務名稱裡有完整班別（國二理化公校班）最準；
        名稱比較短時（例如「國二理化小考成績」→ 國二理化），對到班別開頭是它的班；同時對到好幾班時，
        名稱有「輔導」就算輔導課、沒有就算正課。 */
-    var cList = (cfg.courses || []).map(function (c) { return { label: c.label, cls: c.cls, hits: [] }; });
+    /* 比對前先統一寫法：拿掉「(上)」「（下）」和空白；「數學超前資優／數學超前／數超」都當成「數資」
+       （課表寫「數學超前A」、任務常寫「國一數資A班」；任務常寫「高二(上)桃高化學」） */
+    var norm = function (s) {
+      return String(s || '').replace(/[（(][上下][）)]/g, '').replace(/\s+/g, '')
+        .replace(/數學超前資優|數學超前|數超/g, '數資');
+    };
+    var cList = (cfg.courses || []).map(function (c) { return { label: norm(c.label), cls: c.cls ? norm(c.cls) : c.cls, show: c.label, hits: [] }; });
     tasks.filter(function (t) { return t.type === '成績'; }).forEach(function (t) {
-      var name = t.name || '', isTu = /輔導/.test(name);
+      var name = norm(t.name), isTu = /輔導/.test(name);
       var hit = cList.filter(function (c) { return [c.cls, c.label].some(function (k) { return k && name.indexOf(k) >= 0; }); });
       if (!hit.length) {
         var core = name.replace(/[（(].*$/, '').replace(/(小考)?成績$|小考$/, '').replace(/班$/, '').trim();
@@ -63,7 +69,7 @@
     });
     var courses = cList.map(function (c) {
       var st = !c.hits.length ? '未發送' : (c.hits.some(function (t) { return t.fail > 0; }) ? '未發完' : '已發送');
-      return { label: c.label, status: st };
+      return { label: c.show, status: st };
     });
 
     /* 第二次檢測（cfg.second）：只看上一次報告之後「新的紀錄」（開始或最後更新在那之後的任務）。
