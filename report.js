@@ -56,10 +56,12 @@
         var core = name.replace(/[（(].*$/, '').replace(/(小考)?成績$|小考$/, '').replace(/班$/, '').trim();
         if (core.length >= 3) {
           hit = cList.filter(function (c) { return [c.cls, c.label].some(function (k) { return k && k.indexOf(core) === 0; }); });
-          /* 再對不到：同年級＋同科目（「高一化學」→ 高一必修化學） */
+          /* 再對不到：簡稱。同年級，而且任務名稱的字照順序都出現在班名裡就算
+             （「高一化學」→ 高一必修化學、「國一數進」→ 國一數學進度、「國二數進輔導」→ 國二數學進度輔導） */
           if (!hit.length) {
-            var gr = core.slice(0, 2), subj = core.slice(2);
-            if (subj.length >= 2) hit = cList.filter(function (c) { return [c.cls, c.label].some(function (k) { return k && k.indexOf(gr) === 0 && k.indexOf(subj, 2) >= 0; }); });
+            var gr = core.slice(0, 2), rest = core.slice(2);
+            var inOrder = function (k) { var p = 2; for (var q = 0; q < rest.length; q++) { p = k.indexOf(rest.charAt(q), p); if (p < 0) return false; p++; } return true; };
+            if (rest.length >= 2) hit = cList.filter(function (c) { return [c.cls, c.label].some(function (k) { return k && k.indexOf(gr) === 0 && inOrder(k); }); });
           }
           var pref = hit.filter(function (c) { return /輔導/.test(c.cls || c.label) === isTu; });
           if (pref.length) hit = pref;
