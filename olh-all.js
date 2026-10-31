@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.51', VERSION_DATE = '2026/10/27';
+  var VERSION = '1.53', VERSION_DATE = '2026/10/31';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1591,7 +1591,7 @@
         if (siblings && !hasNameInTemplate) note.push('兄弟姊妹共用的 LINE，訊息裡最好寫孩子姓名');
         var okToSend = !dup && (msg.text.trim() || photos.length) && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
         item.contacts.push({ contactId: c.contactId, nick: nick, unread: !!(chat && chat.read === false), note: note.join('、'),
-          checked: !!okToSend, pending: !!(ambiguous && okToSend) });
+          checked: !!okToSend, pending: !!(ambiguous && okToSend), notFriend: c.friend === false });
         await sleep(120);
       }
       out.push(item);
@@ -1909,13 +1909,13 @@
       var n = it.contacts.filter(function (c) { return c.checked; }).length;
       send += n; if (n) students++;
       if (it.block) blocked.push(it.student + '（' + it.block + '）');
+      else if (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; })) blocked.push(it.student + '（只有非好友／已封鎖的 LINE）');
       it.contacts.forEach(function (c) { if (c.unread) unread.push(c.nick); });
     });
     var unknown = []; items.forEach(function (it) { it.unknown.forEach(function (u) { if (unknown.indexOf(u) < 0) unknown.push(u); }); });
     var nPh = items.length && items[0].photos ? items[0].photos.length : 0;
     var h = '<div class="lg-box">共 ' + items.length + ' 位：會發給 <b>' + students + '</b> 位學生的家長，共 <b class="lg-total">' + send + '</b> 則' +
       (nPh ? '<br>📷 每位家長會收到：' + (items[0].text.trim() ? '文字＋' : '') + '<b>' + nPh + ' 張照片</b>（' + (state.porder === 'photo' ? '先照片再文字' : '先文字再照片') + '）' : '') +
-      (blocked.length ? '<br><span class="lg-red">不會發（' + blocked.length + ' 位）</span>：' + esc(blocked.join('、')) : '') +
       (unknown.length ? '<br><span class="lg-red">訊息裡的 [' + esc(unknown.join(']、[')) + '] 在名單裡找不到這個欄位，請修改。</span>' : '') +
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
       '</div><table><tr><th style="width:84px">學生</th><th>發給 ／ 訊息內容</th></tr>';
@@ -1938,6 +1938,11 @@
     if (pend.length) {
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：待確認 ' + pend.length + ' 個 LINE</b>（名稱前面不一樣，可能不是同一家人，<b>已先幫你勾選</b>；不是的話在下面取消勾選）：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + pend.map(esc).join('<br>') + '</div></div>' + h;
+    }
+    /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
+    if (blocked.length) {
+      h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的訊息發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
+        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
@@ -2661,7 +2666,7 @@
         var okToSend = !dup && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
         /* pending＝只因為「看起來不是同一家人」而沒勾，可以用「把待確認的全部勾選」一次勾起來 */
         item.contacts.push({ contactId: c.contactId, nick: nick, unread: !!(chat && chat.read === false), note: note.join('、'),
-          checked: okToSend, pending: ambiguous && okToSend });
+          checked: okToSend, pending: ambiguous && okToSend, notFriend: c.friend === false });
         await sleep(120);
       }
       out.push(item);
@@ -3065,6 +3070,7 @@
       var n = it.contacts.filter(function (c) { return c.checked; }).length;
       send += n; if (n) students++;
       if (it.block) blocked.push(it.student + '（' + it.block + '）');
+      else if (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; })) blocked.push(it.student + '（只有非好友／已封鎖的 LINE）');
       it.contacts.forEach(function (c) { if (c.unread) unread.push(c.nick); });
     });
     var unknown = []; items.forEach(function (it) { it.unknown.forEach(function (u) { if (unknown.indexOf(u) < 0) unknown.push(u); }); });
@@ -3074,7 +3080,6 @@
       '<br>補考／輔導：<b>' + (state.rtq === 'yes' ? '要' : '不要') + '</b>' +
       (rtList.length ? '<br><span style="color:#c62828;font-weight:bold">需補考／輔導 ' + rtList.length + ' 位</span>：' + esc(rtList.join('、')) : '') +
       (tuList.length ? '<br><span style="color:#1565c0;font-weight:bold">需輔導 ' + tuList.length + ' 位</span>：' + esc(tuList.join('、')) : '') +
-      (blocked.length ? '<br><span class="lg-red">不會發（' + blocked.length + ' 位）</span>：' + esc(blocked.join('、')) : '') +
       (unknown.length ? '<br><span class="lg-red">範本裡的 [' + esc(unknown.join(']、[')) + '] 在 Excel 找不到這個欄位，請修改範本。</span>' : '') +
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
       '</div><table><tr><th style="width:84px">學生</th><th>發給 ／ 訊息內容</th></tr>';
@@ -3099,6 +3104,11 @@
     if (pend.length) {
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：待確認 ' + pend.length + ' 個 LINE</b>（名稱前面不一樣，可能不是同一家人，<b>已先幫你勾選</b>；不是的話在下面取消勾選）：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + pend.map(esc).join('<br>') + '</div></div>' + h;
+    }
+    /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
+    if (blocked.length) {
+      h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的成績發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
+        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
