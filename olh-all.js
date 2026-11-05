@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.57', VERSION_DATE = '2026/11/02';
+  var VERSION = '1.58', VERSION_DATE = '2026/11/05';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1044,11 +1044,13 @@
     把聯絡人分三組（prefix 例如 115）：
     A＝名稱開頭就是 115；B＝115 出現在名稱中間（兄弟姊妹共用的 LINE）；
     C＝只寫兩碼「15」（例如「15武陵…」），要人工判斷。
+    數字後面再接數字也算（金頭腦的名稱是 6 碼學號，例如「180056郭…」輸入 18 要找得到），
+    這種另外標 digitAfter，摘要會列出有幾個，讓人看一下。
   */
   function classifyByPrefix(contacts, prefix) {
     var p = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     var isNum = /^\d+$/.test(prefix);
-    var reB = new RegExp((isNum ? '(^|\\D)' : '') + p + (isNum ? '(?!\\d)' : ''));
+    var reB = new RegExp((isNum ? '(^|\\D)' : '') + p);
     var short = /^1\d\d$/.test(prefix) ? prefix.slice(1) : null;
     var reC = short ? new RegExp('(^|\\D)' + short + '(?=[^\\d\\s])') : null;
     var g = { A: [], B: [], C: [] };
@@ -1056,8 +1058,9 @@
       if (c.spam) return;
       var nick = displayName(c).trim();
       var item = { contactId: c.contactId, nick: nick, tagIds: c.tagIds || [] };
-      if (nick.indexOf(prefix) === 0 && !(isNum && /\d/.test(nick.charAt(prefix.length)))) { item.group = 'A'; g.A.push(item); }
-      else if (reB.test(nick)) { item.group = 'B'; g.B.push(item); }
+      var mB = reB.exec(nick);
+      if (nick.indexOf(prefix) === 0) { item.group = 'A'; g.A.push(item); item.digitAfter = isNum && /\d/.test(nick.charAt(prefix.length)); }
+      else if (mB) { item.group = 'B'; g.B.push(item); item.digitAfter = isNum && /\d/.test(nick.charAt(mB.index + mB[0].length)); }
       else if (reC && reC.test(nick)) { item.group = 'C'; g.C.push(item); }
     });
     return g;
@@ -1131,7 +1134,11 @@
       q2('.p-sum').innerHTML = '<div class="lt-box">共讀取 ' + st2.all.length + ' 個聯絡人，跟「' + esc(prefix) + '」有關的：<br>' +
         'A. 名稱開頭是 ' + esc(prefix) + '：<b>' + g.A.length + '</b> 個<br>' +
         'B. ' + esc(prefix) + ' 在名稱中間（兄弟姊妹共用）：<b>' + g.B.length + '</b> 個（會算進來）<br>' +
-        (g.C.length || /^1\d\d$/.test(prefix) ? 'C. 只寫兩碼「' + esc(prefix.slice(1)) + '」：<b>' + g.C.length + '</b> 個（預覽時自己勾）' : '') + '</div>';
+        (g.C.length || /^1\d\d$/.test(prefix) ? 'C. 只寫兩碼「' + esc(prefix.slice(1)) + '」：<b>' + g.C.length + '</b> 個（預覽時自己勾）' : '') +
+        (function () {
+          var d = g.A.concat(g.B).filter(function (t) { return t.digitAfter; });
+          return d.length ? '<br><span class="lt-muted">A、B 裡有 ' + d.length + ' 個是「' + esc(prefix) + '」後面還接數字（例如 ' + esc(d[0].nick.slice(0, 12)) + '），也算進來了；不對的話預覽時取消勾選。</span>' : '';
+        })() + '</div>';
       }
       renderExclude();
       ['.p-s2', '.p-s3', '.p-s4'].forEach(function (s) { q2(s).style.display = ''; });
@@ -1210,7 +1217,8 @@
     h += '<h4 style="margin:12px 0 4px">要上的名單（' + keep.length + '，可取消勾選）</h4><div class="lt-scroll">';
     keep.forEach(function (it) {
       h += '<label class="lt-c"><input type="checkbox" class="p-k" data-id="' + esc(it.contactId) + '"' + (st2.uncheck[it.contactId] ? '' : ' checked') + '> ' +
-        esc(it.nick) + (it.group === 'B' ? ' <span class="lt-muted">（中間有）</span>' : '') + '</label>';
+        esc(it.nick) + (it.group === 'B' ? ' <span class="lt-muted">（中間有）</span>' : '') +
+        (it.digitAfter ? ' <span class="lt-muted">（後面接數字）</span>' : '') + '</label>';
     });
     h += '</div>';
     h += '<details style="margin-top:8px"><summary>扣掉的人（' + removed.length + '）</summary><div class="lt-scroll">' +
