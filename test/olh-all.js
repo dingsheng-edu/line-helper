@@ -1446,8 +1446,15 @@
   function hasQ(n) { return /[?？]/.test(n); }
   function nameMatch(nick, n) {
     if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
-    var m = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'u').exec(nick);
-    return m ? { index: m.index, text: m[0] } : null;
+    /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
+    var re = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'gu'), m, first = null;
+    while ((m = re.exec(nick))) {
+      var r = { index: m.index, text: m[0], start: first ? first.start : m.index };   /* start＝名稱裡第一次出現的位置，用來比「前面那段」 */
+      if (!hasQ(r.text)) return r;
+      if (!first) first = r;
+      re.lastIndex = m.index + 1;
+    }
+    return first;
   }
   async function searchName(n) {
     if (!hasQ(n)) return searchContacts(n);
@@ -1599,15 +1606,17 @@
       var others = list.filter(function (c) { return !nameMatch(displayName(c), n) && !c.spam; });
       if (!mine.length) item.block = '找不到 LINE';
       var prefixes = {};
-      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).index).replace(/\s/g, '')] = 1; });
+      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).start == null ? nameMatch(nick, n).index : nameMatch(nick, n).start).replace(/\s/g, '')] = 1; });
       /* 姓名有問號：訊息裡的姓名換成 LINE 後台名稱裡的字；對不出唯一的字就先不勾，不要把「?」發給家長 */
       var badName = false;
       if (hasQ(n) && mine.length) {
         var reals = {};
-        mine.forEach(function (c) { reals[nameMatch(displayName(c), n).text] = 1; });
-        var realList = Object.keys(reals);
-        if (realList.length === 1 && !hasQ(realList[0])) {
+        /* 每個 LINE 名稱裡沒有問號的寫法都算一票，用最多的那個（跟兄弟姊妹、同一家人一樣先勾好，只做提醒） */
+        mine.forEach(function (c) { var t = nameMatch(displayName(c), n).text; if (!hasQ(t)) reals[t] = (reals[t] || 0) + 1; });
+        var realList = Object.keys(reals).sort(function (a, b) { return reals[b] - reals[a]; });
+        if (realList.length) {
           item.realName = realList[0];
+          if (realList.length > 1) item.warn.push('LINE 後台名稱有不只一種寫法（' + realList.join('、') + '），先用最多的「' + realList[0] + '」，請確認');
           msg.text = msg.text.split(n).join(item.realName); item.text = msg.text;
           key = key.split(n).join(item.realName); item.key = key;
           if (template.indexOf(n) >= 0 || hasNameInTemplate) item.warn.push('姓名有問號，訊息裡先用 LINE 後台名稱的「' + item.realName + '」，請確認這個字對不對');
@@ -1629,6 +1638,7 @@
         if (msg.text.length > 4900) note.push('訊息太長，LINE 可能不收');
         if (nick.indexOf('本人') >= 0) note.push('這是學生本人的 LINE');
         if (chat && chat.read === false) note.push('家長有未讀訊息，記得回覆');
+        if (hasQ(n)) note.push('比對到「' + nameMatch(nick, n).text + '」');
         if (c.friend === false) note.push('非好友/已封鎖，可能收不到');
         if (siblings && !hasNameInTemplate) note.push('兄弟姊妹共用的 LINE，訊息裡最好寫孩子姓名');
         var okToSend = !dup && !badName && (msg.text.trim() || photos.length) && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
@@ -2556,8 +2566,15 @@
   function hasQ(n) { return /[?？]/.test(n); }
   function nameMatch(nick, n) {
     if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
-    var m = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'u').exec(nick);
-    return m ? { index: m.index, text: m[0] } : null;
+    /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
+    var re = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'gu'), m, first = null;
+    while ((m = re.exec(nick))) {
+      var r = { index: m.index, text: m[0], start: first ? first.start : m.index };   /* start＝名稱裡第一次出現的位置，用來比「前面那段」 */
+      if (!hasQ(r.text)) return r;
+      if (!first) first = r;
+      re.lastIndex = m.index + 1;
+    }
+    return first;
   }
   async function searchName(n) {
     if (!hasQ(n)) return searchContacts(n);
@@ -2742,15 +2759,17 @@
       var others = list.filter(function (c) { return !nameMatch(displayName(c), n) && !c.spam; });
       if (!mine.length) item.block = '找不到 LINE';
       var prefixes = {};
-      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).index).replace(/\s/g, '')] = 1; });
+      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).start == null ? nameMatch(nick, n).index : nameMatch(nick, n).start).replace(/\s/g, '')] = 1; });
       /* 姓名有問號：訊息裡的姓名換成 LINE 後台名稱裡的字；對不出唯一的字就先不勾，不要把「?」發給家長 */
       var badName = false;
       if (hasQ(n) && mine.length) {
         var reals = {};
-        mine.forEach(function (c) { reals[nameMatch(displayName(c), n).text] = 1; });
-        var realList = Object.keys(reals);
-        if (realList.length === 1 && !hasQ(realList[0])) {
+        /* 每個 LINE 名稱裡沒有問號的寫法都算一票，用最多的那個（跟兄弟姊妹、同一家人一樣先勾好，只做提醒） */
+        mine.forEach(function (c) { var t = nameMatch(displayName(c), n).text; if (!hasQ(t)) reals[t] = (reals[t] || 0) + 1; });
+        var realList = Object.keys(reals).sort(function (a, b) { return reals[b] - reals[a]; });
+        if (realList.length) {
           item.realName = realList[0];
+          if (realList.length > 1) item.warn.push('LINE 後台名稱有不只一種寫法（' + realList.join('、') + '），先用最多的「' + realList[0] + '」，請確認');
           msg.text = msg.text.split(n).join(item.realName); item.text = msg.text;
           item.warn.push('姓名有問號，訊息裡先用 LINE 後台名稱的「' + item.realName + '」，請確認這個字對不對');
         } else if (msg.text.indexOf(n) >= 0) {
@@ -2771,6 +2790,7 @@
         if (msg.text.length > 4900) note.push('訊息太長，LINE 可能不收');
         if (nick.indexOf('本人') >= 0) note.push('這是學生本人的 LINE');
         if (chat && chat.read === false) note.push('家長有未讀訊息，記得回覆');
+        if (hasQ(n)) note.push('比對到「' + nameMatch(nick, n).text + '」');
         if (c.friend === false) note.push('非好友/已封鎖，可能收不到');
         if (siblings && !hasNameInTemplate) note.push('兄弟姊妹共用的 LINE，訊息裡最好寫孩子姓名');
         var okToSend = !dup && !badName && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
