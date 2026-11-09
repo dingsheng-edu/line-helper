@@ -1945,6 +1945,30 @@
     state.busy = false; this.disabled = false;
   };
 
+  /* 有找到 LINE（或什麼都沒找到）但一個都沒勾的學生：訊息不會發出去，要明顯提醒 */
+  function uncheckedList() {
+    var out = [];
+    state.items.forEach(function (it, ii) {
+      if (it.block || (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; }))) return;   /* 已列在「發不出去」 */
+      if (it.contacts.some(function (c) { return c.checked; })) return;
+      var why = it.warn.filter(function (w) { return w.indexOf('另有') !== 0; }).map(function (w) { return w.replace(/，.*$/, ''); });
+      out.push({ i: ii, text: it.student + '（' + (!it.contacts.length ? '沒有找到 LINE' : why.length ? why.join('、') : '有找到 LINE 但沒有勾選') + '）' });
+    });
+    return out;
+  }
+  function refreshUnchecked() {
+    var box = $('.lg-out .lg-unchk'); if (!box) return;
+    var u = uncheckedList(), set = {};
+    u.forEach(function (x) { set[x.i] = 1; });
+    box.style.display = u.length ? '' : 'none';
+    box.innerHTML = u.length ? '<b class="lg-red">⚠ 這 ' + u.length + ' 位學生沒有勾選任何 LINE，訊息不會發出去</b>（請在下面紅底那一列確認後手動勾選，或另外通知家長；點名字會跳過去）：' +
+      '<div style="max-height:120px;overflow:auto;margin:4px 0">' + u.map(function (x) { return '<a href="#" data-go="' + x.i + '" style="color:#c62828">' + esc(x.text) + '</a>'; }).join('<br>') + '</div>' : '';
+    $('.lg-out').querySelectorAll('tr[data-i]').forEach(function (tr) { tr.style.background = set[tr.dataset.i] ? '#fde7e9' : ''; });
+    box.querySelectorAll('a[data-go]').forEach(function (a) {
+      a.onclick = function (e) { e.preventDefault(); var tr = $('.lg-out tr[data-i="' + this.dataset.go + '"]'); if (tr) tr.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+    });
+  }
+
   function renderPreview() {
     var items = state.items, send = 0, students = 0, blocked = [], unread = [];
     items.forEach(function (it) {
@@ -1962,7 +1986,7 @@
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
       '</div><table><tr><th style="width:84px">學生</th><th>發給 ／ 訊息內容</th></tr>';
     items.forEach(function (it, ii) {
-      h += '<tr><td>' + esc(it.student) + '<div class="lg-muted">第 ' + it.row + ' 列</div></td><td>';
+      h += '<tr data-i="' + ii + '"><td>' + esc(it.student) + '<div class="lg-muted">第 ' + it.row + ' 列</div></td><td>';
       if (it.block) h += '<span class="lg-red">' + esc(it.block) + '，不會發</span>';
       it.warn.forEach(function (w) { h += '<div class="lg-warn">⚠ ' + esc(w) + '</div>'; });
       it.contacts.forEach(function (c, ci) {
@@ -1987,17 +2011,21 @@
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：' + qn.length + ' 位學生姓名有問號</b>（已用 LINE 後台名稱比對，訊息裡有姓名的也會補字，<b>請確認這個字對不對</b>；不對的話把名單改成正確姓名）：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + qn.map(esc).join('<br>') + '</div></div>' + h;
     }
+    /* 沒勾選的學生（不會發），放在「發不出去」下面；勾了就自動從清單拿掉 */
+    h = '<div class="lg-box lg-unchk" style="border:2px solid #c62828;background:#fde7e9"></div>' + h;
     /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
     if (blocked.length) {
       h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的訊息發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
+    refreshUnchecked();
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
         state.items[this.dataset.i].contacts[this.dataset.c].checked = this.checked;
         var t = 0; state.items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.checked) t++; }); });
         $('.lg-total').textContent = t;
+        refreshUnchecked();
       };
     });
   }
@@ -3146,6 +3174,30 @@
     return '<div style="font-weight:bold;color:#1565c0">' + (it.score === '' ? '<span class="lg-muted">缺考</span>' : esc(it.score) + ' 分') + '</div>';
   }
 
+  /* 有找到 LINE（或什麼都沒找到）但一個都沒勾的學生：成績不會發出去，要明顯提醒 */
+  function uncheckedList() {
+    var out = [];
+    state.items.forEach(function (it, ii) {
+      if (it.block || (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; }))) return;   /* 已列在「發不出去」 */
+      if (it.contacts.some(function (c) { return c.checked; })) return;
+      var why = it.warn.filter(function (w) { return w.indexOf('另有') !== 0; }).map(function (w) { return w.replace(/，.*$/, ''); });
+      out.push({ i: ii, text: it.student + '（' + (!it.contacts.length ? '沒有找到 LINE' : why.length ? why.join('、') : '有找到 LINE 但沒有勾選') + '）' });
+    });
+    return out;
+  }
+  function refreshUnchecked() {
+    var box = $('.lg-out .lg-unchk'); if (!box) return;
+    var u = uncheckedList(), set = {};
+    u.forEach(function (x) { set[x.i] = 1; });
+    box.style.display = u.length ? '' : 'none';
+    box.innerHTML = u.length ? '<b class="lg-red">⚠ 這 ' + u.length + ' 位學生沒有勾選任何 LINE，成績不會發出去</b>（請在下面紅底那一列確認後手動勾選，或另外通知家長；點名字會跳過去）：' +
+      '<div style="max-height:120px;overflow:auto;margin:4px 0">' + u.map(function (x) { return '<a href="#" data-go="' + x.i + '" style="color:#c62828">' + esc(x.text) + '</a>'; }).join('<br>') + '</div>' : '';
+    $('.lg-out').querySelectorAll('tr[data-i]').forEach(function (tr) { tr.style.background = set[tr.dataset.i] ? '#fde7e9' : ''; });
+    box.querySelectorAll('a[data-go]').forEach(function (a) {
+      a.onclick = function (e) { e.preventDefault(); var tr = $('.lg-out tr[data-i="' + this.dataset.go + '"]'); if (tr) tr.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+    });
+  }
+
   function renderPreview() {
     var items = state.items, send = 0, students = 0, blocked = [], unread = [];
     items.forEach(function (it) {
@@ -3166,7 +3218,7 @@
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
       '</div><table><tr><th style="width:84px">學生</th><th>發給 ／ 訊息內容</th></tr>';
     items.forEach(function (it, ii) {
-      h += '<tr><td>' + esc(it.student) + scoreTag(it) + '<div class="lg-muted">Excel 第 ' + it.row + ' 列</div></td><td>';
+      h += '<tr data-i="' + ii + '"><td>' + esc(it.student) + scoreTag(it) + '<div class="lg-muted">Excel 第 ' + it.row + ' 列</div></td><td>';
       if (it.block) h += '<span class="lg-red">' + esc(it.block) + '，不會發</span>';
       if (it.retest) h += '<div><span style="background:#fde7e9;color:#c62828;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需補考／輔導</span></div>';
       if (it.tutor) h += '<div><span style="background:#e3f2fd;color:#1565c0;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需輔導</span></div>';
@@ -3193,17 +3245,21 @@
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：' + qn.length + ' 位學生姓名有問號</b>（訊息裡已用 LINE 後台名稱補字，<b>請確認這個字對不對</b>；不對的話把名單改成正確姓名）：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + qn.map(esc).join('<br>') + '</div></div>' + h;
     }
+    /* 沒勾選的學生（不會發），放在「發不出去」下面；勾了就自動從清單拿掉 */
+    h = '<div class="lg-box lg-unchk" style="border:2px solid #c62828;background:#fde7e9"></div>' + h;
     /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
     if (blocked.length) {
       h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的成績發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
+    refreshUnchecked();
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
         state.items[this.dataset.i].contacts[this.dataset.c].checked = this.checked;
         var t = 0; state.items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.checked) t++; }); });
         $('.lg-total').textContent = t;
+        refreshUnchecked();
       };
     });
   }
