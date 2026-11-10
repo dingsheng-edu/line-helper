@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.59', VERSION_DATE = '2026/11/09';
+  var VERSION = '1.60', VERSION_DATE = '2026/11/10';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1443,7 +1443,9 @@
     return api('/api/v2/bots/' + botId + '/contacts?query=' + encodeURIComponent(q) + '&limit=50').then(function (j) { return j.list || []; });
   }
   /* 姓名裡的「?」＝學生資料沒存到的難字（例如「?與辰」），比對時當成任何一個字 */
-  function hasQ(n) { return /[?？]/.test(n); }
+  /* 2026/11/10 起：「?」照字面比對（使用者已把 LINE 後台名稱也改成有「?」，例如「116新興莊?瑋…」），
+     不把「?」當成任何字、不猜真名、訊息裡也不換字。下面用到 hasQ 的「猜字」程式都不會再跑。 */
+  function hasQ(n) { return false; }
   function nameMatch(nick, n) {
     if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
     /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
@@ -2563,7 +2565,9 @@
     return api('/api/v2/bots/' + botId + '/contacts?query=' + encodeURIComponent(q) + '&limit=50').then(function (j) { return j.list || []; });
   }
   /* 姓名裡的「?」＝學生資料沒存到的難字（例如「?與辰」），比對時當成任何一個字 */
-  function hasQ(n) { return /[?？]/.test(n); }
+  /* 2026/11/10 起：「?」照字面比對（使用者已把 LINE 後台名稱也改成有「?」，例如「116新興莊?瑋…」），
+     不把「?」當成任何字、不猜真名、訊息裡也不換字。下面用到 hasQ 的「猜字」程式都不會再跑。 */
+  function hasQ(n) { return false; }
   function nameMatch(nick, n) {
     if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
     /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
