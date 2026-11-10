@@ -1446,8 +1446,10 @@
   /* 2026/11/10 起：「?」照字面比對（使用者已把 LINE 後台名稱也改成有「?」，例如「116新興莊?瑋…」），
      不把「?」當成任何字、不猜真名、訊息裡也不換字。下面用到 hasQ 的「猜字」程式都不會再跑。 */
   function hasQ(n) { return false; }
+  /* 半形「?」和全形「？」當成一樣（字數一樣，位置不會跑掉） */
+  function qn(s) { return String(s).replace(/？/g, '?'); }
   function nameMatch(nick, n) {
-    if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
+    if (!hasQ(n)) { var i = qn(nick).indexOf(qn(n)); return i < 0 ? null : { index: i, text: n }; }
     /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
     var re = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'gu'), m, first = null;
     while ((m = re.exec(nick))) {
@@ -1459,7 +1461,12 @@
     return first;
   }
   async function searchName(n) {
-    if (!hasQ(n)) return searchContacts(n);
+    if (!hasQ(n)) {
+      if (!/[?？]/.test(n)) return searchContacts(n);
+      /* 名字有問號：半形「?」、全形「？」各搜一次再合併（同一個 LINE 只留一次） */
+      var a = await searchContacts(n.replace(/？/g, '?')), b = await searchContacts(n.replace(/\?/g, '？')), seen = {};
+      return a.concat(b).filter(function (c) { if (seen[c.contactId]) return false; seen[c.contactId] = 1; return true; });
+    }
     /* 用問號以外最長的一段去搜；一個字可能超過一頁，要全部翻完 */
     var q = n.split(/[?？]/).reduce(function (a, b) { return b.length >= a.length ? b : a; }, '');
     if (!q) return [];
@@ -2568,8 +2575,10 @@
   /* 2026/11/10 起：「?」照字面比對（使用者已把 LINE 後台名稱也改成有「?」，例如「116新興莊?瑋…」），
      不把「?」當成任何字、不猜真名、訊息裡也不換字。下面用到 hasQ 的「猜字」程式都不會再跑。 */
   function hasQ(n) { return false; }
+  /* 半形「?」和全形「？」當成一樣（字數一樣，位置不會跑掉） */
+  function qn(s) { return String(s).replace(/？/g, '?'); }
   function nameMatch(nick, n) {
-    if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
+    if (!hasQ(n)) { var i = qn(nick).indexOf(qn(n)); return i < 0 ? null : { index: i, text: n }; }
     /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
     var re = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'gu'), m, first = null;
     while ((m = re.exec(nick))) {
@@ -2581,7 +2590,12 @@
     return first;
   }
   async function searchName(n) {
-    if (!hasQ(n)) return searchContacts(n);
+    if (!hasQ(n)) {
+      if (!/[?？]/.test(n)) return searchContacts(n);
+      /* 名字有問號：半形「?」、全形「？」各搜一次再合併（同一個 LINE 只留一次） */
+      var a = await searchContacts(n.replace(/？/g, '?')), b = await searchContacts(n.replace(/\?/g, '？')), seen = {};
+      return a.concat(b).filter(function (c) { if (seen[c.contactId]) return false; seen[c.contactId] = 1; return true; });
+    }
     /* 用問號以外最長的一段去搜；一個字可能超過一頁，要全部翻完 */
     var q = n.split(/[?？]/).reduce(function (a, b) { return b.length >= a.length ? b : a; }, '');
     if (!q) return [];
