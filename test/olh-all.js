@@ -1450,8 +1450,8 @@
   function qn(s) { return String(s).replace(/？/g, '?'); }
   /* 名單上的姓名 → 訊息裡用的真名（找要發給哪個 LINE 還是用名單上的姓名）：
      1. 名單裡夾了學校（為了分辨同名）：陳武陵彥安 → 陳彥安、陳和謙壢中 → 陳和謙、林品妤(中山) → 林品妤
-     2. 有「?」：用 LINE 後台名稱裡緊接在後面括號寫的真名，例如「116新興莊?瑋(莊敍瑋)爸爸」→ 莊敍瑋；
-        沒寫括號、或括號寫的不一樣，就維持「?」（不猜） */
+     2. 有「?」：在名稱裡有寫「曾?智」的 LINE 裡，找同一個名稱另外寫的真名，例如「117復旦曾煊智媽媽(曾?智)」→ 曾煊智；
+        沒寫真名、或寫了好幾種不一樣的，就維持「?」（不猜；也不看別人的 LINE） */
   var SCHOOLS = '武陵|壢中|同德|新興|慈文|中山|振聲|經國|復旦|桃高|陽明|青溪|建國|平鎮|內壢|中壢|大有|大成|自強|光明|永豐|南崁|仁和|龍潭|楊梅|八德|大園|青埔|治平|育達|成功|會稽|福豐|文昌|東興|龍安|建德|二橋|西門|北門|同安|中興|新明|大竹|康橋|薇閣|大溪|石門|林口|土城|元生';
   function realName(n, nicks) {
     var r = n.replace(/[（(][^()（）]{1,6}[)）]$/, ''), m;
@@ -1460,11 +1460,12 @@
       else if ((m = r.match(new RegExp('^(...)(' + SCHOOLS + ')$')))) r = m[1];
     }
     if (/[?？]/.test(r)) {
-      var found = {};
+      /* 只看「名稱裡有寫『曾?智』」的那幾個 LINE：同一個名稱裡另外寫的真名（例如「117復旦曾煊智媽媽(曾?智)」裡的「曾煊智」） */
+      var found = {}, re = new RegExp(r.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('\\p{Script=Han}'), 'gu');
       nicks.forEach(function (nick) {
-        var i = qn(nick).indexOf(qn(n)); if (i < 0) return;
-        var p = nick.slice(i + n.length).match(/^\s*[（(]([^()（）]+)[)）]/);
-        if (p && p[1].length === r.length && p[1].split('').every(function (ch, k) { return ch === r[k] || /[?？]/.test(r[k]); })) found[p[1]] = 1;
+        if (qn(nick).indexOf(qn(n)) < 0) return;
+        var mm; re.lastIndex = 0;
+        while ((mm = re.exec(nick))) found[mm[0]] = 1;
       });
       var k = Object.keys(found); if (k.length === 1) r = k[0];
     }
@@ -2608,8 +2609,8 @@
   function qn(s) { return String(s).replace(/？/g, '?'); }
   /* 名單上的姓名 → 訊息裡用的真名（找要發給哪個 LINE 還是用名單上的姓名）：
      1. 名單裡夾了學校（為了分辨同名）：陳武陵彥安 → 陳彥安、陳和謙壢中 → 陳和謙、林品妤(中山) → 林品妤
-     2. 有「?」：用 LINE 後台名稱裡緊接在後面括號寫的真名，例如「116新興莊?瑋(莊敍瑋)爸爸」→ 莊敍瑋；
-        沒寫括號、或括號寫的不一樣，就維持「?」（不猜） */
+     2. 有「?」：在名稱裡有寫「曾?智」的 LINE 裡，找同一個名稱另外寫的真名，例如「117復旦曾煊智媽媽(曾?智)」→ 曾煊智；
+        沒寫真名、或寫了好幾種不一樣的，就維持「?」（不猜；也不看別人的 LINE） */
   var SCHOOLS = '武陵|壢中|同德|新興|慈文|中山|振聲|經國|復旦|桃高|陽明|青溪|建國|平鎮|內壢|中壢|大有|大成|自強|光明|永豐|南崁|仁和|龍潭|楊梅|八德|大園|青埔|治平|育達|成功|會稽|福豐|文昌|東興|龍安|建德|二橋|西門|北門|同安|中興|新明|大竹|康橋|薇閣|大溪|石門|林口|土城|元生';
   function realName(n, nicks) {
     var r = n.replace(/[（(][^()（）]{1,6}[)）]$/, ''), m;
@@ -2618,11 +2619,12 @@
       else if ((m = r.match(new RegExp('^(...)(' + SCHOOLS + ')$')))) r = m[1];
     }
     if (/[?？]/.test(r)) {
-      var found = {};
+      /* 只看「名稱裡有寫『曾?智』」的那幾個 LINE：同一個名稱裡另外寫的真名（例如「117復旦曾煊智媽媽(曾?智)」裡的「曾煊智」） */
+      var found = {}, re = new RegExp(r.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('\\p{Script=Han}'), 'gu');
       nicks.forEach(function (nick) {
-        var i = qn(nick).indexOf(qn(n)); if (i < 0) return;
-        var p = nick.slice(i + n.length).match(/^\s*[（(]([^()（）]+)[)）]/);
-        if (p && p[1].length === r.length && p[1].split('').every(function (ch, k) { return ch === r[k] || /[?？]/.test(r[k]); })) found[p[1]] = 1;
+        if (qn(nick).indexOf(qn(n)) < 0) return;
+        var mm; re.lastIndex = 0;
+        while ((mm = re.exec(nick))) found[mm[0]] = 1;
       });
       var k = Object.keys(found); if (k.length === 1) r = k[0];
     }
