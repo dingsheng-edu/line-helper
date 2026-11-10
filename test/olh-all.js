@@ -3846,7 +3846,7 @@
       state.rows = j.leaves; state.from = f; state.to = to;
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
       draw();
-      guessNames(full === true).then(autoBackfill);
+      guessNames(full === true).then(autoBackfill).then(syncNameMap);
     } catch (e) { $('.ll-st').textContent = ''; $('.ll-out').innerHTML = '<div class="ll-err">' + esc(e.message) + '</div>'; }
   }
 
@@ -3858,8 +3858,27 @@
      （後台的聯絡人 ID 和機器人收到的 LINE ID 不一樣，不能用 ID 對）
      讀到的對照表只放在這個分頁 30 分鐘（關掉分頁就清掉），不用每次都重讀。 */
   var NICK_KEY = 'll-nicks-' + GAOQUN, nickMap = null;
-  async function nicksByName(nm) {
-    if (!nm) return [];
+  /* LINE 名稱對照表存到補習班電腦（請假總表用）：一天自動更新一次，之後機器人收到請假，馬上就能用家長 LINE 名稱找到後台名稱 */
+  var mapChecked = false;
+  async function syncNameMap() {
+    if (mapChecked || (location.pathname.split('/')[1] || '') !== GAOQUN) return;
+    mapChecked = true;
+    try {
+      var info = await srv('/leaves/name-map');
+      var age = info.updated ? Date.now() - new Date(info.updated.replace(' ', 'T') + ':00').getTime() : Infinity;
+      if (info.count && age < 20 * 3600000) return;
+      if (!nickMap) await nicksByName('', true);
+      else await sendNameMap(nickMap);
+    } catch (e) { }
+  }
+  async function sendNameMap(map) {
+    try {
+      var r = await srv('/leaves/name-map', { map: map });
+      $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5) + '　LINE 名稱對照表已更新（' + r.count + ' 筆）';
+    } catch (e) { }
+  }
+  async function nicksByName(nm, force) {
+    if (!nm && !force) return [];
     if (!nickMap) {
       try { var c = JSON.parse(sessionStorage.getItem(NICK_KEY) || 'null'); if (c && Date.now() - c.at < 30 * 60000) nickMap = c.map; } catch (e) { }
     }
@@ -3877,8 +3896,9 @@
       nickMap = map;
       try { sessionStorage.setItem(NICK_KEY, JSON.stringify({ at: Date.now(), map: map })); } catch (e) { }
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
+      if (!next && n) { mapChecked = true; await sendNameMap(map); }   /* 完整讀完才存，讀一半的不要蓋掉 */
     }
-    return (nickMap[nm] || []).slice(0, 5);
+    return nm ? (nickMap[nm] || []).slice(0, 5) : [];
   }
   async function guessNames(full) {
     if ((location.pathname.split('/')[1] || '') !== GAOQUN) return;
