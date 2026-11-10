@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.61', VERSION_DATE = '2026/11/10';
+  var VERSION = '1.62', VERSION_DATE = '2026/11/10';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1459,6 +1459,15 @@
       if ((m = r.match(new RegExp('^(.)(' + SCHOOLS + ')(..)$')))) r = m[1] + m[3];
       else if ((m = r.match(new RegExp('^(...)(' + SCHOOLS + ')$')))) r = m[1];
     }
+    /* 名單上的字和真名不一樣：後台名稱寫「名單上的名字(真名)」，例如「蕭宥宣(蕭宥亘)」→ 蕭宥亘
+       （括號裡要是同樣字數、同一個姓的全名才算；「(中山)」「(亘)」這種不算） */
+    var fix = {};
+    nicks.forEach(function (nick) {
+      var i = qn(nick).indexOf(qn(n)); if (i < 0) return;
+      var p = nick.slice(i + n.length).match(/^[（(]([^()（）]+)[)）]/);
+      if (p && p[1] !== n && p[1].length === n.length && p[1][0] === n[0] && /^\p{Script=Han}+$/u.test(p[1])) fix[p[1]] = 1;
+    });
+    var fk = Object.keys(fix); if (fk.length === 1) return fk[0];
     if (/[?？]/.test(r)) {
       /* 只看「名稱裡有寫『曾?智』」的那幾個 LINE：同一個名稱裡另外寫的真名（例如「117復旦曾煊智媽媽(曾?智)」裡的「曾煊智」） */
       var found = {}, re = new RegExp(r.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('\\p{Script=Han}'), 'gu');
@@ -2618,6 +2627,15 @@
       if ((m = r.match(new RegExp('^(.)(' + SCHOOLS + ')(..)$')))) r = m[1] + m[3];
       else if ((m = r.match(new RegExp('^(...)(' + SCHOOLS + ')$')))) r = m[1];
     }
+    /* 名單上的字和真名不一樣：後台名稱寫「名單上的名字(真名)」，例如「蕭宥宣(蕭宥亘)」→ 蕭宥亘
+       （括號裡要是同樣字數、同一個姓的全名才算；「(中山)」「(亘)」這種不算） */
+    var fix = {};
+    nicks.forEach(function (nick) {
+      var i = qn(nick).indexOf(qn(n)); if (i < 0) return;
+      var p = nick.slice(i + n.length).match(/^[（(]([^()（）]+)[)）]/);
+      if (p && p[1] !== n && p[1].length === n.length && p[1][0] === n[0] && /^\p{Script=Han}+$/u.test(p[1])) fix[p[1]] = 1;
+    });
+    var fk = Object.keys(fix); if (fk.length === 1) return fk[0];
     if (/[?？]/.test(r)) {
       /* 只看「名稱裡有寫『曾?智』」的那幾個 LINE：同一個名稱裡另外寫的真名（例如「117復旦曾煊智媽媽(曾?智)」裡的「曾煊智」） */
       var found = {}, re = new RegExp(r.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('\\p{Script=Han}'), 'gu');
