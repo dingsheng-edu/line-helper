@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.58', VERSION_DATE = '2026/11/05';
+  var VERSION = '1.59', VERSION_DATE = '2026/11/09';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1446,8 +1446,15 @@
   function hasQ(n) { return /[?？]/.test(n); }
   function nameMatch(nick, n) {
     if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
-    var m = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'u').exec(nick);
-    return m ? { index: m.index, text: m[0] } : null;
+    /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
+    var re = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'gu'), m, first = null;
+    while ((m = re.exec(nick))) {
+      var r = { index: m.index, text: m[0], start: first ? first.start : m.index };   /* start＝名稱裡第一次出現的位置，用來比「前面那段」 */
+      if (!hasQ(r.text)) return r;
+      if (!first) first = r;
+      re.lastIndex = m.index + 1;
+    }
+    return first;
   }
   async function searchName(n) {
     if (!hasQ(n)) return searchContacts(n);
@@ -1599,15 +1606,17 @@
       var others = list.filter(function (c) { return !nameMatch(displayName(c), n) && !c.spam; });
       if (!mine.length) item.block = '找不到 LINE';
       var prefixes = {};
-      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).index).replace(/\s/g, '')] = 1; });
+      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).start == null ? nameMatch(nick, n).index : nameMatch(nick, n).start).replace(/\s/g, '')] = 1; });
       /* 姓名有問號：訊息裡的姓名換成 LINE 後台名稱裡的字；對不出唯一的字就先不勾，不要把「?」發給家長 */
       var badName = false;
       if (hasQ(n) && mine.length) {
         var reals = {};
-        mine.forEach(function (c) { reals[nameMatch(displayName(c), n).text] = 1; });
-        var realList = Object.keys(reals);
-        if (realList.length === 1 && !hasQ(realList[0])) {
+        /* 每個 LINE 名稱裡沒有問號的寫法都算一票，用最多的那個（跟兄弟姊妹、同一家人一樣先勾好，只做提醒） */
+        mine.forEach(function (c) { var t = nameMatch(displayName(c), n).text; if (!hasQ(t)) reals[t] = (reals[t] || 0) + 1; });
+        var realList = Object.keys(reals).sort(function (a, b) { return reals[b] - reals[a]; });
+        if (realList.length) {
           item.realName = realList[0];
+          if (realList.length > 1) item.warn.push('LINE 後台名稱有不只一種寫法（' + realList.join('、') + '），先用最多的「' + realList[0] + '」，請確認');
           msg.text = msg.text.split(n).join(item.realName); item.text = msg.text;
           key = key.split(n).join(item.realName); item.key = key;
           if (template.indexOf(n) >= 0 || hasNameInTemplate) item.warn.push('姓名有問號，訊息裡先用 LINE 後台名稱的「' + item.realName + '」，請確認這個字對不對');
@@ -1629,6 +1638,7 @@
         if (msg.text.length > 4900) note.push('訊息太長，LINE 可能不收');
         if (nick.indexOf('本人') >= 0) note.push('這是學生本人的 LINE');
         if (chat && chat.read === false) note.push('家長有未讀訊息，記得回覆');
+        if (hasQ(n)) note.push('比對到「' + nameMatch(nick, n).text + '」');
         if (c.friend === false) note.push('非好友/已封鎖，可能收不到');
         if (siblings && !hasNameInTemplate) note.push('兄弟姊妹共用的 LINE，訊息裡最好寫孩子姓名');
         var okToSend = !dup && !badName && (msg.text.trim() || photos.length) && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
@@ -1945,6 +1955,30 @@
     state.busy = false; this.disabled = false;
   };
 
+  /* 有找到 LINE（或什麼都沒找到）但一個都沒勾的學生：訊息不會發出去，要明顯提醒 */
+  function uncheckedList() {
+    var out = [];
+    state.items.forEach(function (it, ii) {
+      if (it.block || (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; }))) return;   /* 已列在「發不出去」 */
+      if (it.contacts.some(function (c) { return c.checked; })) return;
+      var why = it.warn.filter(function (w) { return w.indexOf('另有') !== 0; }).map(function (w) { return w.replace(/，.*$/, ''); });
+      out.push({ i: ii, text: it.student + '（' + (!it.contacts.length ? '沒有找到 LINE' : why.length ? why.join('、') : '有找到 LINE 但沒有勾選') + '）' });
+    });
+    return out;
+  }
+  function refreshUnchecked() {
+    var box = $('.lg-out .lg-unchk'); if (!box) return;
+    var u = uncheckedList(), set = {};
+    u.forEach(function (x) { set[x.i] = 1; });
+    box.style.display = u.length ? '' : 'none';
+    box.innerHTML = u.length ? '<b class="lg-red">⚠ 這 ' + u.length + ' 位學生沒有勾選任何 LINE，訊息不會發出去</b>（請在下面紅底那一列確認後手動勾選，或另外通知家長；點名字會跳過去）：' +
+      '<div style="max-height:120px;overflow:auto;margin:4px 0">' + u.map(function (x) { return '<a href="#" data-go="' + x.i + '" style="color:#c62828">' + esc(x.text) + '</a>'; }).join('<br>') + '</div>' : '';
+    $('.lg-out').querySelectorAll('tr[data-i]').forEach(function (tr) { tr.style.background = set[tr.dataset.i] ? '#fde7e9' : ''; });
+    box.querySelectorAll('a[data-go]').forEach(function (a) {
+      a.onclick = function (e) { e.preventDefault(); var tr = $('.lg-out tr[data-i="' + this.dataset.go + '"]'); if (tr) tr.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+    });
+  }
+
   function renderPreview() {
     var items = state.items, send = 0, students = 0, blocked = [], unread = [];
     items.forEach(function (it) {
@@ -1962,7 +1996,7 @@
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
       '</div><table><tr><th style="width:84px">學生</th><th>發給 ／ 訊息內容</th></tr>';
     items.forEach(function (it, ii) {
-      h += '<tr><td>' + esc(it.student) + '<div class="lg-muted">第 ' + it.row + ' 列</div></td><td>';
+      h += '<tr data-i="' + ii + '"><td>' + esc(it.student) + '<div class="lg-muted">第 ' + it.row + ' 列</div></td><td>';
       if (it.block) h += '<span class="lg-red">' + esc(it.block) + '，不會發</span>';
       it.warn.forEach(function (w) { h += '<div class="lg-warn">⚠ ' + esc(w) + '</div>'; });
       it.contacts.forEach(function (c, ci) {
@@ -1987,17 +2021,21 @@
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：' + qn.length + ' 位學生姓名有問號</b>（已用 LINE 後台名稱比對，訊息裡有姓名的也會補字，<b>請確認這個字對不對</b>；不對的話把名單改成正確姓名）：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + qn.map(esc).join('<br>') + '</div></div>' + h;
     }
+    /* 沒勾選的學生（不會發），放在「發不出去」下面；勾了就自動從清單拿掉 */
+    h = '<div class="lg-box lg-unchk" style="border:2px solid #c62828;background:#fde7e9"></div>' + h;
     /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
     if (blocked.length) {
       h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的訊息發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
+    refreshUnchecked();
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
         state.items[this.dataset.i].contacts[this.dataset.c].checked = this.checked;
         var t = 0; state.items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.checked) t++; }); });
         $('.lg-total').textContent = t;
+        refreshUnchecked();
       };
     });
   }
@@ -2528,8 +2566,15 @@
   function hasQ(n) { return /[?？]/.test(n); }
   function nameMatch(nick, n) {
     if (!hasQ(n)) { var i = nick.indexOf(n); return i < 0 ? null : { index: i, text: n }; }
-    var m = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'u').exec(nick);
-    return m ? { index: m.index, text: m[0] } : null;
+    /* 名稱裡可能同時有「莊?瑋」和「莊錸瑋」：優先用沒有問號的那個 */
+    var re = new RegExp(n.split(/[?？]/).map(function (s) { return s.replace(/[.*+^${}()|[\]\\\/]/g, '\\$&'); }).join('[\\p{Script=Han}?？]'), 'gu'), m, first = null;
+    while ((m = re.exec(nick))) {
+      var r = { index: m.index, text: m[0], start: first ? first.start : m.index };   /* start＝名稱裡第一次出現的位置，用來比「前面那段」 */
+      if (!hasQ(r.text)) return r;
+      if (!first) first = r;
+      re.lastIndex = m.index + 1;
+    }
+    return first;
   }
   async function searchName(n) {
     if (!hasQ(n)) return searchContacts(n);
@@ -2714,15 +2759,17 @@
       var others = list.filter(function (c) { return !nameMatch(displayName(c), n) && !c.spam; });
       if (!mine.length) item.block = '找不到 LINE';
       var prefixes = {};
-      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).index).replace(/\s/g, '')] = 1; });
+      mine.forEach(function (c) { var nick = displayName(c); prefixes[nick.slice(0, nameMatch(nick, n).start == null ? nameMatch(nick, n).index : nameMatch(nick, n).start).replace(/\s/g, '')] = 1; });
       /* 姓名有問號：訊息裡的姓名換成 LINE 後台名稱裡的字；對不出唯一的字就先不勾，不要把「?」發給家長 */
       var badName = false;
       if (hasQ(n) && mine.length) {
         var reals = {};
-        mine.forEach(function (c) { reals[nameMatch(displayName(c), n).text] = 1; });
-        var realList = Object.keys(reals);
-        if (realList.length === 1 && !hasQ(realList[0])) {
+        /* 每個 LINE 名稱裡沒有問號的寫法都算一票，用最多的那個（跟兄弟姊妹、同一家人一樣先勾好，只做提醒） */
+        mine.forEach(function (c) { var t = nameMatch(displayName(c), n).text; if (!hasQ(t)) reals[t] = (reals[t] || 0) + 1; });
+        var realList = Object.keys(reals).sort(function (a, b) { return reals[b] - reals[a]; });
+        if (realList.length) {
           item.realName = realList[0];
+          if (realList.length > 1) item.warn.push('LINE 後台名稱有不只一種寫法（' + realList.join('、') + '），先用最多的「' + realList[0] + '」，請確認');
           msg.text = msg.text.split(n).join(item.realName); item.text = msg.text;
           item.warn.push('姓名有問號，訊息裡先用 LINE 後台名稱的「' + item.realName + '」，請確認這個字對不對');
         } else if (msg.text.indexOf(n) >= 0) {
@@ -2743,6 +2790,7 @@
         if (msg.text.length > 4900) note.push('訊息太長，LINE 可能不收');
         if (nick.indexOf('本人') >= 0) note.push('這是學生本人的 LINE');
         if (chat && chat.read === false) note.push('家長有未讀訊息，記得回覆');
+        if (hasQ(n)) note.push('比對到「' + nameMatch(nick, n).text + '」');
         if (c.friend === false) note.push('非好友/已封鎖，可能收不到');
         if (siblings && !hasNameInTemplate) note.push('兄弟姊妹共用的 LINE，訊息裡最好寫孩子姓名');
         var okToSend = !dup && !badName && msg.text.length <= 4900 && !msg.missing.length && !msg.unknown.length && c.friend !== false;
@@ -3146,6 +3194,30 @@
     return '<div style="font-weight:bold;color:#1565c0">' + (it.score === '' ? '<span class="lg-muted">缺考</span>' : esc(it.score) + ' 分') + '</div>';
   }
 
+  /* 有找到 LINE（或什麼都沒找到）但一個都沒勾的學生：成績不會發出去，要明顯提醒 */
+  function uncheckedList() {
+    var out = [];
+    state.items.forEach(function (it, ii) {
+      if (it.block || (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; }))) return;   /* 已列在「發不出去」 */
+      if (it.contacts.some(function (c) { return c.checked; })) return;
+      var why = it.warn.filter(function (w) { return w.indexOf('另有') !== 0; }).map(function (w) { return w.replace(/，.*$/, ''); });
+      out.push({ i: ii, text: it.student + '（' + (!it.contacts.length ? '沒有找到 LINE' : why.length ? why.join('、') : '有找到 LINE 但沒有勾選') + '）' });
+    });
+    return out;
+  }
+  function refreshUnchecked() {
+    var box = $('.lg-out .lg-unchk'); if (!box) return;
+    var u = uncheckedList(), set = {};
+    u.forEach(function (x) { set[x.i] = 1; });
+    box.style.display = u.length ? '' : 'none';
+    box.innerHTML = u.length ? '<b class="lg-red">⚠ 這 ' + u.length + ' 位學生沒有勾選任何 LINE，成績不會發出去</b>（請在下面紅底那一列確認後手動勾選，或另外通知家長；點名字會跳過去）：' +
+      '<div style="max-height:120px;overflow:auto;margin:4px 0">' + u.map(function (x) { return '<a href="#" data-go="' + x.i + '" style="color:#c62828">' + esc(x.text) + '</a>'; }).join('<br>') + '</div>' : '';
+    $('.lg-out').querySelectorAll('tr[data-i]').forEach(function (tr) { tr.style.background = set[tr.dataset.i] ? '#fde7e9' : ''; });
+    box.querySelectorAll('a[data-go]').forEach(function (a) {
+      a.onclick = function (e) { e.preventDefault(); var tr = $('.lg-out tr[data-i="' + this.dataset.go + '"]'); if (tr) tr.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+    });
+  }
+
   function renderPreview() {
     var items = state.items, send = 0, students = 0, blocked = [], unread = [];
     items.forEach(function (it) {
@@ -3166,7 +3238,7 @@
       (unread.length ? '<br><span class="lg-warn">⚠ 有 ' + unread.length + ' 位家長有未讀訊息：' + esc(unread.join('、')) + '（記得回覆）</span>' : '') +
       '</div><table><tr><th style="width:84px">學生</th><th>發給 ／ 訊息內容</th></tr>';
     items.forEach(function (it, ii) {
-      h += '<tr><td>' + esc(it.student) + scoreTag(it) + '<div class="lg-muted">Excel 第 ' + it.row + ' 列</div></td><td>';
+      h += '<tr data-i="' + ii + '"><td>' + esc(it.student) + scoreTag(it) + '<div class="lg-muted">Excel 第 ' + it.row + ' 列</div></td><td>';
       if (it.block) h += '<span class="lg-red">' + esc(it.block) + '，不會發</span>';
       if (it.retest) h += '<div><span style="background:#fde7e9;color:#c62828;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需補考／輔導</span></div>';
       if (it.tutor) h += '<div><span style="background:#e3f2fd;color:#1565c0;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:bold">需輔導</span></div>';
@@ -3193,17 +3265,21 @@
       h = '<div class="lg-box" style="border:1px solid #ffb74d;background:#fff8e1"><b class="lg-warn">提醒：' + qn.length + ' 位學生姓名有問號</b>（訊息裡已用 LINE 後台名稱補字，<b>請確認這個字對不對</b>；不對的話把名單改成正確姓名）：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + qn.map(esc).join('<br>') + '</div></div>' + h;
     }
+    /* 沒勾選的學生（不會發），放在「發不出去」下面；勾了就自動從清單拿掉 */
+    h = '<div class="lg-box lg-unchk" style="border:2px solid #c62828;background:#fde7e9"></div>' + h;
     /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
     if (blocked.length) {
       h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的成績發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
         '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
     }
     $('.lg-out').innerHTML = h;
+    refreshUnchecked();
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
         state.items[this.dataset.i].contacts[this.dataset.c].checked = this.checked;
         var t = 0; state.items.forEach(function (it) { it.contacts.forEach(function (c) { if (c.checked) t++; }); });
         $('.lg-total').textContent = t;
+        refreshUnchecked();
       };
     });
   }
@@ -3770,7 +3846,7 @@
       state.rows = j.leaves; state.from = f; state.to = to;
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
       draw();
-      guessNames(full === true).then(autoBackfill);
+      guessNames(full === true).then(autoBackfill).then(syncNameMap);
     } catch (e) { $('.ll-st').textContent = ''; $('.ll-out').innerHTML = '<div class="ll-err">' + esc(e.message) + '</div>'; }
   }
 
@@ -3782,8 +3858,27 @@
      （後台的聯絡人 ID 和機器人收到的 LINE ID 不一樣，不能用 ID 對）
      讀到的對照表只放在這個分頁 30 分鐘（關掉分頁就清掉），不用每次都重讀。 */
   var NICK_KEY = 'll-nicks-' + GAOQUN, nickMap = null;
-  async function nicksByName(nm) {
-    if (!nm) return [];
+  /* LINE 名稱對照表存到補習班電腦（請假總表用）：一天自動更新一次，之後機器人收到請假，馬上就能用家長 LINE 名稱找到後台名稱 */
+  var mapChecked = false;
+  async function syncNameMap() {
+    if (mapChecked || (location.pathname.split('/')[1] || '') !== GAOQUN) return;
+    mapChecked = true;
+    try {
+      var info = await srv('/leaves/name-map');
+      var age = info.updated ? Date.now() - new Date(info.updated.replace(' ', 'T') + ':00').getTime() : Infinity;
+      if (info.count && age < 20 * 3600000) return;
+      if (!nickMap) await nicksByName('', true);
+      else await sendNameMap(nickMap);
+    } catch (e) { }
+  }
+  async function sendNameMap(map) {
+    try {
+      var r = await srv('/leaves/name-map', { map: map });
+      $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5) + '　LINE 名稱對照表已更新（' + r.count + ' 筆）';
+    } catch (e) { }
+  }
+  async function nicksByName(nm, force) {
+    if (!nm && !force) return [];
     if (!nickMap) {
       try { var c = JSON.parse(sessionStorage.getItem(NICK_KEY) || 'null'); if (c && Date.now() - c.at < 30 * 60000) nickMap = c.map; } catch (e) { }
     }
@@ -3801,8 +3896,9 @@
       nickMap = map;
       try { sessionStorage.setItem(NICK_KEY, JSON.stringify({ at: Date.now(), map: map })); } catch (e) { }
       $('.ll-st').textContent = '更新時間 ' + new Date().toTimeString().slice(0, 5);
+      if (!next && n) { mapChecked = true; await sendNameMap(map); }   /* 完整讀完才存，讀一半的不要蓋掉 */
     }
-    return (nickMap[nm] || []).slice(0, 5);
+    return nm ? (nickMap[nm] || []).slice(0, 5) : [];
   }
   async function guessNames(full) {
     if ((location.pathname.split('/')[1] || '') !== GAOQUN) return;
