@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.62', VERSION_DATE = '2026/11/10';
+  var VERSION = '1.63', VERSION_DATE = '2026/11/13';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -1448,6 +1448,72 @@
   function hasQ(n) { return false; }
   /* 半形「?」和全形「？」當成一樣（字數一樣，位置不會跑掉） */
   function qn(s) { return String(s).replace(/？/g, '?'); }
+  /* ========== 發不出去的學生存成 Excel（姓名、訊息），方便另外補發 ==========
+     自己組 .xlsx（zip 不壓縮），不用外掛程式庫；存檔視窗預設開在桌面（瀏覽器不支援就照一般下載）。 */
+  var CRC_T = null;
+  function crc32(u8) {
+    if (!CRC_T) { CRC_T = []; for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC_T[n] = c >>> 0; } }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < u8.length; i++) crc = CRC_T[(crc ^ u8[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function zipStore(files) {
+    var enc = new TextEncoder(), parts = [], central = [], off = 0;
+    function u16(v) { return [v & 255, (v >>> 8) & 255]; }
+    function u32(v) { return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; }
+    files.forEach(function (f) {
+      var name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+      var head = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0));
+      parts.push(new Uint8Array([0x50, 0x4b, 0x03, 0x04].concat(head)), name, data);
+      central.push(new Uint8Array([0x50, 0x4b, 0x01, 0x02].concat(u16(20), head, u16(0), u16(0), u16(0), u32(0), u32(off))), name);
+      off += 30 + name.length + data.length;
+    });
+    var size = central.reduce(function (s, a) { return s + a.length; }, 0);
+    var end = new Uint8Array([0x50, 0x4b, 0x05, 0x06].concat(u16(0), u16(0), u16(files.length), u16(files.length), u32(size), u32(off), u16(0)));
+    return new Blob(parts.concat(central, [end]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function xlsxBlob(rows) {
+    function x(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ''); }
+    var sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="2" width="90" customWidth="1"/></cols><sheetData>' +
+      rows.map(function (r, i) {
+        return '<row r="' + (i + 1) + '">' + r.map(function (v, j) {
+          return '<c r="' + 'AB'[j] + (i + 1) + '" t="inlineStr" s="' + (i ? 1 : 2) + '"><is><t xml:space="preserve">' + x(v) + '</t></is></c>';
+        }).join('') + '</row>';
+      }).join('') + '</sheetData></worksheet>';
+    return zipStore([
+      { name: '[Content_Types].xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+      { name: '_rels/.rels', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="發不出去" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+      { name: 'xl/_rels/workbook.xml.rels', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: 'xl/styles.xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="12"/><name val="Microsoft JhengHei"/></font><font><b/><sz val="12"/><name val="Microsoft JhengHei"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf/><xf applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf fontId="1" applyFont="1"/></cellXfs></styleSheet>' },
+      { name: 'xl/worksheets/sheet1.xml', text: sheet }
+    ]);
+  }
+  async function saveBlockedXlsx(kind) {
+    var list = state.blockedItems || [];
+    if (!list.length) return;
+    var rows = [['姓名', '訊息']].concat(list.map(function (it) {
+      var n = it.photos && it.photos.length ? '\n（另附 ' + it.photos.length + ' 張照片）' : '';
+      return [it.realName || it.student, (it.text || '') + n];
+    }));
+    var d = new Date(), p = function (v) { return ('0' + v).slice(-2); };
+    var name = kind + '發不出去_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + '.xlsx';
+    var blob = xlsxBlob(rows);
+    if (window.showSaveFilePicker) {
+      try {
+        var fh = await window.showSaveFilePicker({ suggestedName: name, startIn: 'desktop',
+          types: [{ description: 'Excel 檔', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }] });
+        var w = await fh.createWritable(); await w.write(blob); await w.close();
+        alert('已存好：' + fh.name + '（' + list.length + ' 位）');
+        return;
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    alert('已下載到「下載」資料夾：' + name);
+  }
   /* 名單上的姓名 → 訊息裡用的真名（找要發給哪個 LINE 還是用名單上的姓名）：
      1. 名單裡夾了學校（為了分辨同名）：陳武陵彥安 → 陳彥安、陳和謙壢中 → 陳和謙、林品妤(中山) → 林品妤
      2. 有「?」：在名稱裡有寫「曾?智」的 LINE 裡，找同一個名稱另外寫的真名，例如「117復旦曾煊智媽媽(曾?智)」→ 曾煊智；
@@ -2071,12 +2137,14 @@
     }
     /* 沒勾選的學生（不會發），放在「發不出去」下面；勾了就自動從清單拿掉 */
     h = '<div class="lg-box lg-unchk" style="border:2px solid #c62828;background:#fde7e9"></div>' + h;
+    state.blockedItems = items.filter(function (it) { return it.block || (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; })); });
     /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
     if (blocked.length) {
       h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的訊息發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
-        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
+        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div><button type="button" class="lg-xlsx" style="padding:4px 12px;font-weight:bold">📥 存成 Excel（姓名、訊息），另外補發</button></div>' + h;
     }
     $('.lg-out').innerHTML = h;
+    var xb = $('.lg-out .lg-xlsx'); if (xb) xb.onclick = function () { saveBlockedXlsx('訊息'); };
     refreshUnchecked();
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
@@ -2616,6 +2684,72 @@
   function hasQ(n) { return false; }
   /* 半形「?」和全形「？」當成一樣（字數一樣，位置不會跑掉） */
   function qn(s) { return String(s).replace(/？/g, '?'); }
+  /* ========== 發不出去的學生存成 Excel（姓名、訊息），方便另外補發 ==========
+     自己組 .xlsx（zip 不壓縮），不用外掛程式庫；存檔視窗預設開在桌面（瀏覽器不支援就照一般下載）。 */
+  var CRC_T = null;
+  function crc32(u8) {
+    if (!CRC_T) { CRC_T = []; for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC_T[n] = c >>> 0; } }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < u8.length; i++) crc = CRC_T[(crc ^ u8[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function zipStore(files) {
+    var enc = new TextEncoder(), parts = [], central = [], off = 0;
+    function u16(v) { return [v & 255, (v >>> 8) & 255]; }
+    function u32(v) { return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; }
+    files.forEach(function (f) {
+      var name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+      var head = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0));
+      parts.push(new Uint8Array([0x50, 0x4b, 0x03, 0x04].concat(head)), name, data);
+      central.push(new Uint8Array([0x50, 0x4b, 0x01, 0x02].concat(u16(20), head, u16(0), u16(0), u16(0), u32(0), u32(off))), name);
+      off += 30 + name.length + data.length;
+    });
+    var size = central.reduce(function (s, a) { return s + a.length; }, 0);
+    var end = new Uint8Array([0x50, 0x4b, 0x05, 0x06].concat(u16(0), u16(0), u16(files.length), u16(files.length), u32(size), u32(off), u16(0)));
+    return new Blob(parts.concat(central, [end]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function xlsxBlob(rows) {
+    function x(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ''); }
+    var sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="2" width="90" customWidth="1"/></cols><sheetData>' +
+      rows.map(function (r, i) {
+        return '<row r="' + (i + 1) + '">' + r.map(function (v, j) {
+          return '<c r="' + 'AB'[j] + (i + 1) + '" t="inlineStr" s="' + (i ? 1 : 2) + '"><is><t xml:space="preserve">' + x(v) + '</t></is></c>';
+        }).join('') + '</row>';
+      }).join('') + '</sheetData></worksheet>';
+    return zipStore([
+      { name: '[Content_Types].xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+      { name: '_rels/.rels', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="發不出去" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+      { name: 'xl/_rels/workbook.xml.rels', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: 'xl/styles.xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="12"/><name val="Microsoft JhengHei"/></font><font><b/><sz val="12"/><name val="Microsoft JhengHei"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf/><xf applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf fontId="1" applyFont="1"/></cellXfs></styleSheet>' },
+      { name: 'xl/worksheets/sheet1.xml', text: sheet }
+    ]);
+  }
+  async function saveBlockedXlsx(kind) {
+    var list = state.blockedItems || [];
+    if (!list.length) return;
+    var rows = [['姓名', '訊息']].concat(list.map(function (it) {
+      var n = it.photos && it.photos.length ? '\n（另附 ' + it.photos.length + ' 張照片）' : '';
+      return [it.realName || it.student, (it.text || '') + n];
+    }));
+    var d = new Date(), p = function (v) { return ('0' + v).slice(-2); };
+    var name = kind + '發不出去_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + '.xlsx';
+    var blob = xlsxBlob(rows);
+    if (window.showSaveFilePicker) {
+      try {
+        var fh = await window.showSaveFilePicker({ suggestedName: name, startIn: 'desktop',
+          types: [{ description: 'Excel 檔', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }] });
+        var w = await fh.createWritable(); await w.write(blob); await w.close();
+        alert('已存好：' + fh.name + '（' + list.length + ' 位）');
+        return;
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    alert('已下載到「下載」資料夾：' + name);
+  }
   /* 名單上的姓名 → 訊息裡用的真名（找要發給哪個 LINE 還是用名單上的姓名）：
      1. 名單裡夾了學校（為了分辨同名）：陳武陵彥安 → 陳彥安、陳和謙壢中 → 陳和謙、林品妤(中山) → 林品妤
      2. 有「?」：在名稱裡有寫「曾?智」的 LINE 裡，找同一個名稱另外寫的真名，例如「117復旦曾煊智媽媽(曾?智)」→ 曾煊智；
@@ -3362,12 +3496,14 @@
     }
     /* 沒勾選的學生（不會發），放在「發不出去」下面；勾了就自動從清單拿掉 */
     h = '<div class="lg-box lg-unchk" style="border:2px solid #c62828;background:#fde7e9"></div>' + h;
+    state.blockedItems = items.filter(function (it) { return it.block || (it.contacts.length && it.contacts.every(function (c) { return c.notFriend; })); });
     /* 發不出去的學生放最上面，讓老師一眼看到，要另外通知家長 */
     if (blocked.length) {
       h = '<div class="lg-box" style="border:2px solid #c62828;background:#fde7e9"><b class="lg-red">⚠ 這 ' + blocked.length + ' 位學生的成績發不出去</b>（沒有找到 LINE 好友），請另外通知家長：' +
-        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div></div>' + h;
+        '<div style="max-height:120px;overflow:auto;margin:4px 0">' + blocked.map(esc).join('<br>') + '</div><button type="button" class="lg-xlsx" style="padding:4px 12px;font-weight:bold">📥 存成 Excel（姓名、訊息），另外補發</button></div>' + h;
     }
     $('.lg-out').innerHTML = h;
+    var xb = $('.lg-out .lg-xlsx'); if (xb) xb.onclick = function () { saveBlockedXlsx('成績'); };
     refreshUnchecked();
     $('.lg-out').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
       cb.onchange = function () {
