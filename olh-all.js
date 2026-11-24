@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.63', VERSION_DATE = '2026/11/13';
+  var VERSION = '1.64', VERSION_DATE = '2026/11/23';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -314,8 +314,28 @@
     removePending: function (id) { return idbDo('readwrite', function (st) { return st['delete'](id); }).then(refreshPending); },
     listPending: function () { return idbDo('readonly', function (st) { return st.getAll(); }).then(function (r) { return r || []; }); },
     resumers: {},
-    showTab: function (k) { showTab(k); }
+    showTab: function (k) { showTab(k); },
+    /* 同一個帳號同時只讓一個分頁發送（2026/11/23：同一台電腦 2 分鐘內開了 4 個上課提醒一起發，被 LINE 擋，75 則記成沒發）。
+       正在發的分頁每 5 秒在這台電腦的瀏覽器留一次記號；其他分頁要發時看到記號就排隊，等它發完自動開始。
+       分頁關掉或當掉，20 秒後記號就失效。（其他電腦同時發看不到） */
+    otherSending: function () {
+      var v = jget(SEND_KEY, null);
+      return v && v.tab !== TAB_ID && Date.now() - v.at < 20000 ? v : null;
+    },
+    beginSend: function (name, leftFn, aliveFn) {
+      function beat() {
+        if (aliveFn && !aliveFn()) return OLH.endSend();   /* 發送已經結束（或中途出錯）→ 不要一直佔著 */
+        jset(SEND_KEY, { tab: TAB_ID, name: name, left: leftFn ? leftFn() : 0, at: Date.now() });
+      }
+      clearInterval(sendTimer); beat(); sendTimer = setInterval(beat, 5000);
+    },
+    endSend: function () {
+      clearInterval(sendTimer); sendTimer = null;
+      var v = jget(SEND_KEY, null);
+      if (v && v.tab === TAB_ID) save(SEND_KEY, '');
+    }
   };
+  var SEND_KEY = 'olh-sending-' + botId, TAB_ID = uid(), sendTimer = null;
 
   /* 最上面的紅色橫幅：上次沒發出去的訊息，一鍵繼續發 */
   function refreshPending() {
@@ -2373,6 +2393,15 @@
     };
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
+    /* 這個帳號另一個分頁正在發 → 先排隊，等它發完自動開始（同時發會被 LINE 擋，2026/11/23） */
+    if (OLHX && OLHX.otherSending) {
+      for (var o = OLHX.otherSending(); !state.stop; o = OLHX.otherSending()) {
+        if (!o) { await sleep(300 + Math.random() * 1500); if (!OLHX.otherSending()) break; continue; }   /* 兩個分頁同時在等：錯開一點，只讓一個先開始 */
+        state.sbar('排隊中', 0, jobs.length, '這個帳號另一個分頁正在發「' + o.name + '」' + (o.left ? '（還剩 ' + o.left + ' 則）' : '') + '，同時發會被 LINE 擋。等它發完會自動開始，不用按任何按鈕…');
+        await sleep(3000);
+      }
+      OLHX.beginSend(state.task ? state.task.name : label, function () { return jobs.filter(function (j) { return !j.c.result; }).length; }, function () { return state.busy; });
+    }
 
     var done = 0, byStudent = {}, gap = 3000, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.verify = ''; });
@@ -2460,6 +2489,7 @@
     }
     if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit && !state.auth) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
+    if (OLHX && OLHX.endSend) OLHX.endSend();
     state.busy = false;
     updateTask(jobs, !!resendJobs);
     var limitHit = state.limit && OLHX, authHit = state.auth && OLHX && !limitHit;
@@ -3737,6 +3767,15 @@
     };
     var label = resendJobs ? '重發中' : '發送中';
     state.sbar(label, 0, jobs.length, '準備中…');
+    /* 這個帳號另一個分頁正在發 → 先排隊，等它發完自動開始（同時發會被 LINE 擋，2026/11/23） */
+    if (OLHX && OLHX.otherSending) {
+      for (var o = OLHX.otherSending(); !state.stop; o = OLHX.otherSending()) {
+        if (!o) { await sleep(300 + Math.random() * 1500); if (!OLHX.otherSending()) break; continue; }   /* 兩個分頁同時在等：錯開一點，只讓一個先開始 */
+        state.sbar('排隊中', 0, jobs.length, '這個帳號另一個分頁正在發「' + o.name + '」' + (o.left ? '（還剩 ' + o.left + ' 則）' : '') + '，同時發會被 LINE 擋。等它發完會自動開始，不用按任何按鈕…');
+        await sleep(3000);
+      }
+      OLHX.beginSend(state.task ? state.task.name : label, function () { return jobs.filter(function (j) { return !j.c.result; }).length; }, function () { return state.busy; });
+    }
 
     var done = 0, byStudent = {}, gap = 3000, WAITS = [15000, 30000, 60000];   /* LINE 說太快：等 15、30、60 秒各再試一次，才當作真的到上限 */
     jobs.forEach(function (j) { j.c.result = ''; j.c.resend = ''; j.c.sendId = null; j.c.verify = ''; });
@@ -3804,6 +3843,7 @@
     }
     if (ar) jobs.forEach(function (j) { if (j.c.resend === 'safe' && !state.stop && !state.limit && !state.auth) j.c.result = '未發送成功（已自動重發 ' + ar + ' 次）：' + j.c.result; });
     $('.lg-preview').disabled = false;
+    if (OLHX && OLHX.endSend) OLHX.endSend();
     state.busy = false;
     updateTask(jobs, !!resendJobs);
     var limitHit = state.limit && OLHX, authHit = state.auth && OLHX && !limitHit;
