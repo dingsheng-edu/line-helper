@@ -11,7 +11,7 @@
   /* 版本編號：每次改完要更新之前，先把這裡加一（例如 1.2 → 1.3），日期也改成今天，
      再執行 build_install_page.py，先 publish.py test 給管理者試用，確認沒問題才 publish.py release，
      並在「更新紀錄.txt」寫一行改了什麼。 */
-  var VERSION = '1.64', VERSION_DATE = '2026/11/23';
+  var VERSION = '1.65', VERSION_DATE = '2026/11/28';
 
   var SHELL_ID = 'olh-shell-2026';
   var botId = location.pathname.split('/')[1] || '';
@@ -3123,7 +3123,7 @@
 
   /* 需要補考的學生，訊息最後自動加上這一句（視窗裡可以改；[補考時間] 會換成選的日期與時間，例如 10/24(六)下午15:00-17:00） */
   var RETEST_SENTENCE = '請成績低於[成績標準]的同學，務必要於[補考時間]，到班進行補考及個別輔導。';
-  var DEFAULT_TEMPLATE ='親愛的家長您好：貴子弟[姓名]於今日[班別]小考成績為[分數]分，名次為第[名次]名，應考人[應考人數]位。班平均為[平均]分。特此通知您。';
+  var DEFAULT_TEMPLATE ='親愛的家長您好：貴子弟[姓名]於今日[班別]小考成績為[分數]分，名次為第[名次]名，應考人數為[應考人數]位。班平均為[平均]分。特此通知您。';
 
   var panel = document.createElement('div');
   panel.id = PANEL_ID;
